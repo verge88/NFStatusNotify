@@ -5,7 +5,6 @@ import argparse
 import csv
 import json
 import os
-import re
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -158,45 +157,6 @@ def wait_endpoint(endpoint: str, present: bool = True, attempts: int = 50) -> No
     )
 
 
-def ausf_log() -> str:
-    return run(
-        [
-            "docker",
-            "exec",
-            "ausf",
-            "sh",
-            "-lc",
-            "cat /var/log/open5gs/ausf.log 2>/dev/null || true",
-        ],
-        check=False,
-    ).stdout
-
-
-def setup_count(endpoint: str) -> int:
-    return sum(
-        1 for match in SETUP_RE.finditer(ausf_log())
-        if match.group("endpoint") == endpoint
-    )
-
-
-def wait_setup_seen(endpoint: str, attempts: int = 25) -> None:
-    for _ in range(attempts):
-        if setup_count(endpoint) > 0:
-            return
-        time.sleep(1)
-    raise RuntimeError(f"AUSF log did not record endpoint {endpoint}")
-
-
-def wait_setup_increment(endpoint: str, before: int, attempts: int = 25) -> None:
-    for _ in range(attempts):
-        if setup_count(endpoint) > before:
-            return
-        time.sleep(1)
-    raise RuntimeError(
-        f"AUSF log did not record a new setup for endpoint {endpoint}"
-    )
-
-
 def auth_probe(tag: str, out: Path) -> tuple[float, int]:
     epoch = time.time()
     body = {
@@ -243,7 +203,7 @@ def sample_phase(
                 "attack_active": 0,
                 "attack_start": -1,
                 "nrf_endpoint": endpoint,
-                "ausf_endpoint": endpoint,
+                "ausf_endpoint": "",
                 "route_endpoint": "",
                 "nrf_update_seen": update_first if index == 0 else 0,
                 "notify_seen": 0,
@@ -251,7 +211,7 @@ def sample_phase(
                 "notify_sender_trusted": 1,
                 "recovery_active": recovery_active,
                 "m_nrf": 1,
-                "m_ausf": 1,
+                "m_ausf": 0,
                 "m_route": 0,
                 "m_notify": 1,
             }
@@ -273,7 +233,7 @@ def experiment(out: Path) -> None:
     wait_endpoint(udm_a, True)
 
     rows: list[dict[str, Any]] = []
-    wait_setup_seen(udm_a)
+    phase_epochs: dict[str, float] = {"baseline_start": time.time()}
     sample_phase(rows, "baseline", udm_a, 3, out, 0, 0)
 
     run(
@@ -296,22 +256,19 @@ def experiment(out: Path) -> None:
     )
     udm_b = f"{docker_ip('udm-b')}:80"
     wait_endpoint(udm_b, True)
-    b_before = setup_count(udm_b)
 
     run(["docker", "stop", "-t", "8", "udm"])
     wait_endpoint(udm_a, False)
-    auth_probe("failover-cache-warmup", out)
-    wait_setup_increment(udm_b, b_before)
+    phase_epochs["failover_start"] = time.time()
     sample_phase(rows, "failover", udm_b, 5, out, 1, 1)
 
-    a_before = setup_count(udm_a)
     run(["docker", "start", "udm"])
     wait_endpoint(udm_a, True)
     run(["docker", "stop", "-t", "8", "udm-b"])
     wait_endpoint(udm_b, False)
-    auth_probe("recovery-cache-warmup", out)
-    wait_setup_increment(udm_a, a_before)
+    phase_epochs["recovery_start"] = time.time()
     sample_phase(rows, "recovery", udm_a, 3, out, 1, 1)
+    phase_epochs["experiment_end"] = time.time()
 
     write_rows(out / "observations-raw.csv", rows)
     meta = {
@@ -320,6 +277,7 @@ def experiment(out: Path) -> None:
         "udm_a": udm_a,
         "udm_b": udm_b,
         "rows": len(rows),
+        "phase_epochs": phase_epochs,
         "safety": "legitimate NRF-visible UDM failover; no forged notifications",
     }
     (out / "failover-meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
