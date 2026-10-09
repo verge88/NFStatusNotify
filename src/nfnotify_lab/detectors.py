@@ -35,7 +35,15 @@ class IsolationForestDetector:
     def __init__(self, random_state: int = 0) -> None:
         self.pipe = Pipeline(
             [
-                ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
+                (
+                    "imputer",
+                    SimpleImputer(
+                        strategy="constant",
+                        fill_value=0.0,
+                        add_indicator=True,
+                        keep_empty_features=True,
+                    ),
+                ),
                 ("scale", StandardScaler()),
                 (
                     "model",
@@ -67,12 +75,28 @@ class ProvenanceAwareDetector:
     is_probability_score = True
 
     def __init__(self, random_state: int = 0) -> None:
-        self.model = HistGradientBoostingClassifier(
-            learning_rate=0.06,
-            max_iter=250,
-            max_leaf_nodes=15,
-            l2_regularization=1.0,
-            random_state=random_state,
+        self.model = Pipeline(
+            [
+                (
+                    "imputer",
+                    SimpleImputer(
+                        strategy="constant",
+                        fill_value=0.0,
+                        add_indicator=True,
+                        keep_empty_features=True,
+                    ),
+                ),
+                (
+                    "model",
+                    HistGradientBoostingClassifier(
+                        learning_rate=0.06,
+                        max_iter=250,
+                        max_leaf_nodes=15,
+                        l2_regularization=1.0,
+                        random_state=random_state,
+                    ),
+                ),
+            ]
         )
 
     def fit(self, x: pd.DataFrame, y: pd.Series) -> ProvenanceAwareDetector:
