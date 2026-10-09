@@ -43,10 +43,18 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     untrusted_sender = 1.0 - out["notify_sender_trusted"].fillna(1.0)
     out["delta_notify"] = notify_seen * np.maximum(invalid_subscription, untrusted_sender)
 
-    # Temporal inconsistency: cache/route changes without a recent observed NRF update.
-    out["cache_changed"] = (
-        out.groupby("run_id")["ausf_endpoint"].transform(lambda s: s.ne(s.shift()).astype(float))
+    # Temporal inconsistency: an observed cache change without a recent observed NRF update.
+    prev_cache = out.groupby("run_id")["ausf_endpoint"].shift()
+    has_pair = out["ausf_endpoint"].notna() & prev_cache.notna()
+    cache_changed = np.where(
+        has_pair,
+        out["ausf_endpoint"].ne(prev_cache).astype(float),
+        np.nan,
     )
+    first_in_run = out.groupby("run_id").cumcount().eq(0)
+    out["cache_changed"] = cache_changed
+    out.loc[first_in_run, "cache_changed"] = 0.0
+
     recent_update = (
         out.groupby("run_id")["nrf_update_seen"]
         .transform(lambda s: s.fillna(0).rolling(6, min_periods=1).max())
