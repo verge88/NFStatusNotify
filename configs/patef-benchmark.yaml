@@ -1,0 +1,27 @@
+dataset:
+  seeds: 60
+  steps: 90
+
+evaluation:
+  target_fpr: 0.001
+  random_state: 42
+
+research:
+  primary_metric: recall_at_target_fpr
+  secondary_metrics:
+    - pr_auc
+    - roc_auc
+    - median_detection_delay
+    - detected_attack_runs
+  compare:
+    - rules
+    - isolation_forest
+    - provenance_aware
+    - patef
+  ablations:
+    - full
+    - no_nrf
+    - no_ausf
+    - no_route
+    - no_notify
+  control_training_seeds: 60
