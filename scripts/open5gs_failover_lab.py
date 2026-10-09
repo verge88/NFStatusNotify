@@ -15,7 +15,6 @@ CURL_IMAGE = os.environ.get("CURL_IMAGE", "curlimages/curl:8.10.1")
 NETWORK = os.environ.get("OPEN5GS_NETWORK", "open5gs")
 NRF_BASE = "http://nrf.open5gs.org:80"
 AUSF_BASE = "http://ausf.open5gs.org:80"
-SETUP_RE = re.compile(r"Setup NF EndPoint\(addr\) \[(?P<endpoint>[^\]]+)\]")
 
 
 def run(
