@@ -21,16 +21,23 @@ class EvaluationResult:
 
 
 def _threshold_at_fpr(scores: np.ndarray, y: np.ndarray, target_fpr: float) -> float:
-    benign = np.asarray(scores)[np.asarray(y) == 0]
+    benign = np.asarray(scores, dtype=float)[np.asarray(y) == 0]
     if benign.size == 0:
         raise ValueError("calibration set has no benign samples")
-    # "higher is more anomalous"; finite-sample conservative quantile.
-    q = min(max(1.0 - target_fpr, 0.0), 1.0)
-    return float(np.quantile(benign, q, method="higher"))
+
+    # Pick the lowest observed threshold whose empirical calibration FPR does
+    # not exceed the target. If score ties make even the maximum too frequent,
+    # move just above the maximum, yielding zero calibration false positives.
+    for threshold in np.unique(benign):
+        if float((benign >= threshold).mean()) <= target_fpr:
+            return float(threshold)
+    return float(np.nextafter(np.max(benign), np.inf))
 
 
-def _run_delay(df: pd.DataFrame, scores: np.ndarray, threshold: float) -> tuple[float, int, int]:
-    tmp = df[["run_id", "attack_start", "attack_active"]].copy()
+def _run_delay(
+    df: pd.DataFrame, scores: np.ndarray, threshold: float
+) -> tuple[float, int, int]:
+    tmp = df[["run_id", "t", "attack_start", "attack_active"]].copy()
     tmp["score"] = scores
     delays: list[float] = []
     total = 0
@@ -40,11 +47,11 @@ def _run_delay(df: pd.DataFrame, scores: np.ndarray, threshold: float) -> tuple[
         if attack_start < 0:
             continue
         total += 1
-        after = g[(g.index >= g.index.min() + attack_start) & (g["score"] >= threshold)]
+        after = g[(g["t"] >= attack_start) & (g["score"] >= threshold)]
         if len(after):
             detected += 1
-            first_local_t = int(after.index[0] - g.index.min())
-            delays.append(float(first_local_t - attack_start))
+            first_t = int(after.iloc[0]["t"])
+            delays.append(float(first_t - attack_start))
     return (float(np.median(delays)) if delays else float("inf"), detected, total)
 
 
