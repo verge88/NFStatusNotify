@@ -76,9 +76,7 @@ def evaluate_all(
     feature_cols = [
         c
         for c in feature_df.columns
-        if c.startswith("delta_")
-        or c.startswith("m_")
-        or c.startswith("prov_")
+        if c.startswith(("delta_", "m_", "prov_"))
         or c in {"recovery_active", "obs_fraction"}
     ]
 
