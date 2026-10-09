@@ -172,13 +172,21 @@ def ausf_log() -> str:
     ).stdout
 
 
-def wait_setup_endpoint(endpoint: str, attempts: int = 20) -> None:
+def setup_count(endpoint: str) -> int:
+    return sum(
+        1 for match in SETUP_RE.finditer(ausf_log())
+        if match.group("endpoint") == endpoint
+    )
+
+
+def wait_setup_increment(endpoint: str, before: int, attempts: int = 25) -> None:
     for _ in range(attempts):
-        seen = {m.group("endpoint") for m in SETUP_RE.finditer(ausf_log())}
-        if endpoint in seen:
+        if setup_count(endpoint) > before:
             return
         time.sleep(1)
-    raise RuntimeError(f"AUSF log never showed setup endpoint {endpoint}")
+    raise RuntimeError(
+        f"AUSF log did not record a new setup for endpoint {endpoint}"
+    )
 
 
 def auth_probe(tag: str, out: Path) -> tuple[float, int]:
@@ -213,7 +221,6 @@ def sample_phase(
 ) -> None:
     for index in range(count):
         epoch, code = auth_probe(f"{phase}-{index}", out)
-        wait_setup_endpoint(endpoint)
         rows.append(
             {
                 "run_id": "real-legit-failover-0",
@@ -258,6 +265,9 @@ def experiment(out: Path) -> None:
     wait_endpoint(udm_a, True)
 
     rows: list[dict[str, Any]] = []
+    a_before = setup_count(udm_a)
+    auth_probe("baseline-cache-warmup", out)
+    wait_setup_increment(udm_a, a_before)
     sample_phase(rows, "baseline", udm_a, 3, out, 0, 0)
 
     run(
@@ -280,15 +290,21 @@ def experiment(out: Path) -> None:
     )
     udm_b = f"{docker_ip('udm-b')}:80"
     wait_endpoint(udm_b, True)
+    b_before = setup_count(udm_b)
 
     run(["docker", "stop", "-t", "8", "udm"])
     wait_endpoint(udm_a, False)
+    auth_probe("failover-cache-warmup", out)
+    wait_setup_increment(udm_b, b_before)
     sample_phase(rows, "failover", udm_b, 5, out, 1, 1)
 
+    a_before = setup_count(udm_a)
     run(["docker", "start", "udm"])
     wait_endpoint(udm_a, True)
     run(["docker", "stop", "-t", "8", "udm-b"])
     wait_endpoint(udm_b, False)
+    auth_probe("recovery-cache-warmup", out)
+    wait_setup_increment(udm_a, a_before)
     sample_phase(rows, "recovery", udm_a, 3, out, 1, 1)
 
     write_rows(out / "observations-raw.csv", rows)
