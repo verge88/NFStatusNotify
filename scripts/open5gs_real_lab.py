@@ -180,7 +180,7 @@ def wait_for(nf_type: str, requester: str, attempts: int = 60) -> dict[str, Any]
 
 
 def create_subscription(out: Path) -> dict[str, Any]:
-    ausf = wait_for("AUSF", "UDM")
+    ausf = wait_for("AUSF", "AMF")
     ausf_id = str(ausf["nfInstanceId"])
     body = {
         "nfStatusNotificationUri": AUSF_CALLBACK,
@@ -216,7 +216,7 @@ def lab_run(out: Path) -> None:
     udm_ip = docker_ip("udm")
 
     initial_udm = wait_for("UDM", "AUSF")
-    wait_for("AUSF", "UDM")
+    wait_for("AUSF", "AMF")
     subscription = create_subscription(out)
 
     run_stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
