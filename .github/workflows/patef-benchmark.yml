@@ -1,0 +1,63 @@
+name: PA-TEF benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/patef-specialized-detector
+    paths:
+      - ".github/workflows/patef-benchmark.yml"
+      - "src/nfnotify_lab/**"
+      - "configs/patef-benchmark.yaml"
+      - "pyproject.toml"
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+      - name: Run low-FPR benchmark
+        run: |
+          nfnotify-lab all             --config configs/patef-benchmark.yaml             --out artifacts/patef-benchmark
+      - name: Summarize PA-TEF
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          from pathlib import Path
+
+          root = Path("artifacts/patef-benchmark")
+          metrics = pd.read_csv(root / "metrics.csv")
+          patef = metrics.loc[metrics["detector"] == "patef"].iloc[0]
+          rules = metrics.loc[metrics["detector"] == "rules"].iloc[0]
+
+          assert patef["fpr"] <= 0.005, patef.to_dict()
+          assert patef["recall_at_target_fpr"] >= 0.90, patef.to_dict()
+
+          lines = [
+              "## PA-TEF benchmark",
+              "",
+              f"- target FPR: 0.1%",
+              f"- PA-TEF test FPR: {patef['fpr']:.6f}",
+              f"- PA-TEF Recall@target-FPR: {patef['recall_at_target_fpr']:.6f}",
+              f"- PA-TEF PR-AUC: {patef['pr_auc']:.6f}",
+              f"- PA-TEF ROC-AUC: {patef['roc_auc']:.6f}",
+              f"- PA-TEF median delay: {patef['median_detection_delay']}",
+              f"- Rules Recall@target-FPR: {rules['recall_at_target_fpr']:.6f}",
+          ]
+          Path("patef-summary.md").write_text("\n".join(lines), encoding="utf-8")
+          print(metrics.to_string(index=False))
+          PY
+          cat patef-summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: patef-benchmark-${{ github.run_id }}
+          path: artifacts/patef-benchmark/
+          retention-days: 30
