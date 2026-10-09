@@ -83,14 +83,24 @@ jobs:
             tshark -r "$LAB_DIR/sbi.pcap"               -d tcp.port==80,http2               -Y 'http2.headers.path contains "nf-status-notify" && http2.headers.method == "POST"'               -T fields               -e frame.time_epoch -e ip.src -e ip.dst               -e http2.headers.method -e http2.headers.path               -E header=y -E separator=/t -E quote=d               > "$LAB_DIR/notifications.tsv"
           fi
 
-      - name: Enrich and score legitimate trace
+      - name: Snapshot AUSF cache log
+        run: |
+          mkdir -p "$LAB_DIR/logs"
+          docker cp ausf:/var/log/open5gs/ausf.log "$LAB_DIR/logs/ausf.log"
+          grep 'Setup NF EndPoint(addr)' "$LAB_DIR/logs/ausf.log"             > "$LAB_DIR/cache-evidence.log" || true
+
+      - name: Enrich score and build counterfactual replay
         run: |
           set -euxo pipefail
-          python scripts/enrich_failover_observations.py             --raw "$LAB_DIR/observations-raw.csv"             --routes "$LAB_DIR/routes.tsv"             --notifications "$LAB_DIR/notifications.tsv"             --meta "$LAB_DIR/failover-meta.json"             --out "$LAB_DIR/observations.csv"
+          python scripts/enrich_failover_observations.py             --raw "$LAB_DIR/observations-raw.csv"             --routes "$LAB_DIR/routes.tsv"             --notifications "$LAB_DIR/notifications.tsv"             --ausf-log "$LAB_DIR/logs/ausf.log"             --meta "$LAB_DIR/failover-meta.json"             --out "$LAB_DIR/observations.csv"             --counterfactual "$LAB_DIR/counterfactual-observations.csv"
 
           pip install -e .
-          nfnotify-lab ingest             --observations "$LAB_DIR/observations.csv"             --out "$LAB_DIR/derived"
-          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/derived"
+
+          nfnotify-lab ingest             --observations "$LAB_DIR/observations.csv"             --out "$LAB_DIR/real"
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/real"
+
+          nfnotify-lab ingest             --observations "$LAB_DIR/counterfactual-observations.csv"             --out "$LAB_DIR/counterfactual"
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"
 
       - name: Validate real A-B-A evidence
         run: |
@@ -100,7 +110,14 @@ jobs:
 
           root = Path("artifacts/open5gs-failover")
           evidence = json.loads((root / "evidence-summary.json").read_text())
-          control = json.loads((root / "derived" / "control-summary.json").read_text())
+          control = json.loads((root / "real" / "control-summary.json").read_text())
+
+          import pandas as pd
+          counter_obs = pd.read_csv(root / "counterfactual-observations.csv")
+          counter_scores = pd.read_csv(root / "counterfactual" / "control-scores.csv")
+          counter_summary = json.loads(
+              (root / "counterfactual" / "control-summary.json").read_text()
+          )
 
           a = evidence["udm_a"]
           b = evidence["udm_b"]
@@ -115,8 +132,33 @@ jobs:
           assert evidence["recovery_route"] == [a], evidence
           assert control["alerts"] == 0, control
 
+          attack = counter_obs["attack_active"].astype(bool).to_numpy()
+          alerts = counter_scores["alert"].astype(bool).to_numpy()
+          attack_alerts = int(alerts[attack].sum())
+          benign_alerts = int(alerts[~attack].sum())
+          recall = float(alerts[attack].mean())
+          fpr = float(alerts[~attack].mean())
+
+          assert attack_alerts >= 1, counter_summary
+          assert benign_alerts == 0, counter_summary
+
+          result = {
+              "attack_samples": int(attack.sum()),
+              "attack_alerts": attack_alerts,
+              "benign_samples": int((~attack).sum()),
+              "benign_alerts": benign_alerts,
+              "recall": recall,
+              "fpr": fpr,
+              "threshold": counter_summary["threshold"],
+              "max_risk": counter_summary["max_risk"],
+          }
+          (root / "counterfactual-result.json").write_text(
+              json.dumps(result, indent=2)
+          )
+
           print(json.dumps(evidence, indent=2))
           print(json.dumps(control, indent=2))
+          print(json.dumps(result, indent=2))
           PY
 
       - name: Collect Open5GS logs
@@ -127,8 +169,6 @@ jobs:
           for nf in nrf ausf udm udm-b; do
             docker logs "$nf" > "$LAB_DIR/logs/$nf-docker.log" 2>&1 || true
           done
-          docker cp ausf:/var/log/open5gs/ausf.log "$LAB_DIR/logs/ausf.log" 2>/dev/null || true
-          grep 'Setup NF EndPoint(addr)' "$LAB_DIR/logs/ausf.log"             > "$LAB_DIR/cache-evidence.log" 2>/dev/null || true
 
       - uses: actions/upload-artifact@v4
         if: always()
