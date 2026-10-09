@@ -179,6 +179,14 @@ def setup_count(endpoint: str) -> int:
     )
 
 
+def wait_setup_seen(endpoint: str, attempts: int = 25) -> None:
+    for _ in range(attempts):
+        if setup_count(endpoint) > 0:
+            return
+        time.sleep(1)
+    raise RuntimeError(f"AUSF log did not record endpoint {endpoint}")
+
+
 def wait_setup_increment(endpoint: str, before: int, attempts: int = 25) -> None:
     for _ in range(attempts):
         if setup_count(endpoint) > before:
@@ -265,9 +273,7 @@ def experiment(out: Path) -> None:
     wait_endpoint(udm_a, True)
 
     rows: list[dict[str, Any]] = []
-    a_before = setup_count(udm_a)
-    auth_probe("baseline-cache-warmup", out)
-    wait_setup_increment(udm_a, a_before)
+    wait_setup_seen(udm_a)
     sample_phase(rows, "baseline", udm_a, 3, out, 0, 0)
 
     run(
