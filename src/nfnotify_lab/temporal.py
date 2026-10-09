@@ -1,0 +1,106 @@
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+
+
+TEMPORAL_WINDOWS = (3, 6, 12)
+
+
+def _persistence(series: pd.Series) -> pd.Series:
+    values = series.fillna(0.0).to_numpy()
+    out = np.zeros(len(values), dtype=float)
+    count = 0
+    for i, value in enumerate(values):
+        count = count + 1 if value > 0 else 0
+        out[i] = count
+    return pd.Series(out, index=series.index)
+
+
+def _since_event(series: pd.Series, cap: int = 25) -> pd.Series:
+    values = series.fillna(0.0).to_numpy()
+    out: list[float] = []
+    elapsed = cap
+    for value in values:
+        elapsed = 0 if value > 0 else min(elapsed + 1, cap)
+        out.append(float(elapsed))
+    return pd.Series(out, index=series.index)
+
+
+def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Add temporal/provenance features without crossing run boundaries."""
+    out = df.copy().sort_values(["run_id", "t"]).reset_index(drop=True)
+
+    out["trusted_notify_seen"] = (
+        out["notify_seen"].fillna(0.0)
+        * out["notify_sender_trusted"].fillna(0.0)
+        * out["notify_subscription_valid"].fillna(0.0)
+    )
+    out["bad_notify_seen"] = out["delta_notify"].fillna(0.0)
+
+    state_pair = out[["delta_nrf_ausf", "delta_route"]]
+    out["state_conflict"] = state_pair.max(axis=1, skipna=True)
+    out.loc[state_pair.isna().all(axis=1), "state_conflict"] = np.nan
+
+    rolling_columns = (
+        "delta_nrf_ausf",
+        "delta_route",
+        "delta_notify",
+        "delta_time",
+        "state_conflict",
+        "recovery_active",
+        "obs_fraction",
+    )
+    for column in rolling_columns:
+        grouped = out.groupby("run_id", sort=False)[column]
+        for window in TEMPORAL_WINDOWS:
+            out[f"{column}_mean_{window}"] = grouped.transform(
+                lambda s, w=window: s.rolling(w, min_periods=1).mean()
+            )
+            out[f"{column}_max_{window}"] = grouped.transform(
+                lambda s, w=window: s.rolling(w, min_periods=1).max()
+            )
+
+    for column in (
+        "nrf_update_seen",
+        "notify_seen",
+        "trusted_notify_seen",
+        "bad_notify_seen",
+    ):
+        out[f"recent_{column}_6"] = out.groupby("run_id", sort=False)[column].transform(
+            lambda s: s.fillna(0.0).rolling(6, min_periods=1).max()
+        )
+
+    out["state_conflict_persist"] = out.groupby("run_id", sort=False)[
+        "state_conflict"
+    ].transform(_persistence)
+    out["route_conflict_persist"] = out.groupby("run_id", sort=False)[
+        "delta_route"
+    ].transform(_persistence)
+    out["cache_conflict_persist"] = out.groupby("run_id", sort=False)[
+        "delta_nrf_ausf"
+    ].transform(_persistence)
+
+    out["since_nrf_update"] = out.groupby("run_id", sort=False)[
+        "nrf_update_seen"
+    ].transform(_since_event)
+    out["since_notify"] = out.groupby("run_id", sort=False)["notify_seen"].transform(
+        _since_event
+    )
+
+    out["unexplained_conflict"] = (
+        out["state_conflict"].fillna(0.0)
+        * (1.0 - out["recent_nrf_update_seen_6"].fillna(0.0))
+    )
+    out["trusted_transition"] = np.maximum(
+        out["recent_nrf_update_seen_6"].fillna(0.0),
+        out["recent_trusted_notify_seen_6"].fillna(0.0),
+    ) * (1.0 - out["bad_notify_seen"].fillna(0.0))
+
+    out["evidence_coverage"] = (
+        0.35 * out["prov_nrf_ausf"].fillna(0.0)
+        + 0.25 * out["prov_route"].fillna(0.0)
+        + 0.20 * out["prov_notify"].fillna(0.0)
+        + 0.20 * out["obs_fraction"].fillna(0.0)
+    )
+    return out

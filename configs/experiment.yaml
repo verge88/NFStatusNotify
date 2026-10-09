@@ -9,15 +9,19 @@ evaluation:
 research:
   primary_metric: recall_at_target_fpr
   secondary_metrics:
+    - pr_auc
+    - roc_auc
     - median_detection_delay
     - detected_attack_runs
   compare:
     - rules
     - isolation_forest
     - provenance_aware
+    - patef
   ablations:
     - full
     - no_nrf
     - no_ausf
     - no_route
     - no_notify
+  control_training_seeds: 60

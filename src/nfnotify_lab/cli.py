@@ -7,7 +7,8 @@ import pandas as pd
 import yaml
 
 from .ablation import evaluate_ablations
-from .evaluate import evaluate_all
+from .control import score_benign_control
+from .evaluate import evaluate_all, evaluate_by_scenario
 from .features import build_features
 from .schema import validate_observations
 from .simulator import DEFAULT_SCENARIOS, simulate_dataset
@@ -45,7 +46,14 @@ def main() -> None:
     )
     parser.add_argument(
         "command",
-        choices=("generate", "ingest", "evaluate", "ablate", "all"),
+        choices=(
+            "generate",
+            "ingest",
+            "evaluate",
+            "ablate",
+            "score-control",
+            "all",
+        ),
         nargs="?",
         default="all",
     )
@@ -68,6 +76,7 @@ def main() -> None:
             raise SystemExit("'ingest' requires --observations path/to/observations.csv")
         features = _ingest(args.observations, out_dir)
         print(f"validated {len(features)} observations; wrote {features_path}")
+        return
     else:
         if not features_path.exists():
             raise SystemExit(
@@ -83,12 +92,27 @@ def main() -> None:
             features, target_fpr=target_fpr, random_state=random_state
         )
         metrics.to_csv(out_dir / "metrics.csv", index=False)
+        scenarios = evaluate_by_scenario(
+            features, target_fpr=target_fpr, random_state=random_state
+        )
+        scenarios.to_csv(out_dir / "scenario-metrics.csv", index=False)
         print(metrics.to_string(index=False))
 
     if args.command in {"ablate", "all"}:
         ablations = evaluate_ablations(features, target_fpr=target_fpr)
         ablations.to_csv(out_dir / "ablations.csv", index=False)
         print(ablations.to_string(index=False))
+
+    if args.command == "score-control":
+        summary = score_benign_control(
+            features,
+            out_dir=out_dir,
+            target_fpr=target_fpr,
+            random_state=random_state,
+            training_seeds=int(cfg["research"].get("control_training_seeds", 60)),
+            steps=int(cfg["dataset"]["steps"]),
+        )
+        print(summary)
 
 
 if __name__ == "__main__":

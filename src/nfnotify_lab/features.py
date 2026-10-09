@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .temporal import add_temporal_features
+
 
 MODEL_FEATURES = [
     "delta_nrf_ausf",
@@ -28,7 +30,7 @@ def _neq(a: object, b: object) -> float:
 
 
 def build_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Build time-aware consistency and provenance features per run."""
+    """Build semantic, temporal and provenance features per run."""
     out = df.copy().sort_values(["run_id", "t"]).reset_index(drop=True)
 
     out["delta_nrf_ausf"] = [
@@ -43,7 +45,6 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     untrusted_sender = 1.0 - out["notify_sender_trusted"].fillna(1.0)
     out["delta_notify"] = notify_seen * np.maximum(invalid_subscription, untrusted_sender)
 
-    # Temporal inconsistency: an observed cache change without a recent observed NRF update.
     prev_cache = out.groupby("run_id")["ausf_endpoint"].shift()
     has_pair = out["ausf_endpoint"].notna() & prev_cache.notna()
     cache_changed = np.where(
@@ -67,7 +68,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     out["prov_route"] = out["m_nrf"] * out["m_route"]
     out["prov_notify"] = out["m_notify"]
 
-    return out
+    return add_temporal_features(out)
 
 
 def model_matrix(feature_df: pd.DataFrame) -> pd.DataFrame:

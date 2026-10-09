@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from .evaluate import evaluate_all
+from .temporal import add_temporal_features
 
 
 ABLATIONS = {
@@ -29,11 +30,15 @@ def apply_ablation(df: pd.DataFrame, name: str) -> pd.DataFrame:
         out["m_nrf"] = 0
         out["delta_nrf_ausf"] = float("nan")
         out["delta_route"] = float("nan")
+        out["delta_time"] = float("nan")
+        out["nrf_update_seen"] = float("nan")
         out["prov_nrf_ausf"] = 0
         out["prov_route"] = 0
     if "m_ausf" in hidden:
         out["m_ausf"] = 0
         out["delta_nrf_ausf"] = float("nan")
+        out["delta_time"] = float("nan")
+        out["cache_changed"] = float("nan")
         out["prov_nrf_ausf"] = 0
     if "m_route" in hidden:
         out["m_route"] = 0
@@ -42,10 +47,13 @@ def apply_ablation(df: pd.DataFrame, name: str) -> pd.DataFrame:
     if "m_notify" in hidden:
         out["m_notify"] = 0
         out["delta_notify"] = float("nan")
+        out["notify_seen"] = float("nan")
+        out["notify_subscription_valid"] = float("nan")
+        out["notify_sender_trusted"] = float("nan")
         out["prov_notify"] = 0
 
     out["obs_fraction"] = out[["m_nrf", "m_ausf", "m_route", "m_notify"]].mean(axis=1)
-    return out
+    return add_temporal_features(out)
 
 
 def evaluate_ablations(feature_df: pd.DataFrame, target_fpr: float = 0.001) -> pd.DataFrame:
