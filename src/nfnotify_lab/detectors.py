@@ -16,7 +16,7 @@ from .features import MODEL_FEATURES, model_matrix
 class RuleDetector:
     """Deterministic semantic-consistency baseline."""
 
-    def fit(self, x: pd.DataFrame, y: pd.Series | None = None) -> "RuleDetector":
+    def fit(self, x: pd.DataFrame, y: pd.Series | None = None) -> RuleDetector:
         return self
 
     def score_samples(self, x: pd.DataFrame) -> np.ndarray:
@@ -50,7 +50,7 @@ class IsolationForestDetector:
             ]
         )
 
-    def fit(self, x: pd.DataFrame, y: pd.Series) -> "IsolationForestDetector":
+    def fit(self, x: pd.DataFrame, y: pd.Series) -> IsolationForestDetector:
         benign = x.loc[y.to_numpy() == 0]
         self.pipe.fit(benign)
         return self
@@ -79,7 +79,7 @@ class ProvenanceAwareDetector:
             random_state=random_state,
         )
 
-    def fit(self, x: pd.DataFrame, y: pd.Series) -> "ProvenanceAwareDetector":
+    def fit(self, x: pd.DataFrame, y: pd.Series) -> ProvenanceAwareDetector:
         self.model.fit(model_matrix(x), y)
         return self
 
