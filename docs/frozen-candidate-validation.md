@@ -90,3 +90,56 @@ descriptively and are not used as a gate that can override the criteria above.
 This validation tests detection of a distributed-state post-effect derived from
 real Open5GS telemetry. It does not implement or deliver a forged
 NFStatusNotify exploit payload.
+
+
+## Independent validation result
+
+The preregistered GitHub Actions run `38060262689` completed successfully with
+**8/8 valid fresh Open5GS laboratories**. Every replicate recorded the same
+frozen candidate configuration SHA256:
+
+`a2eaa557372337db75def2e741780b0414ad07979f8fb1d1177b92a34855338b`.
+
+The paired result was identical in all eight independent runs:
+
+| Metric | Reference 2/12 | Candidate 1/8 | Candidate − reference |
+| --- | ---: | ---: | ---: |
+| Sample recall | 0.800 | **1.000** | **+0.200** |
+| Empirical FPR | 0.000 | **0.000** | 0.000 |
+| Median detection delay | 1 sample | **0 samples** | **−1 sample** |
+| Attack runs detected | 8/8 | **8/8** | — |
+| Strict sample-level external target | 0/8 | **8/8** | — |
+| Benign alert-free real traces | 8/8 | **8/8** | — |
+
+For both recall and detection delay the candidate won all 8 paired comparisons,
+with no losses or ties. The one-sided exact sign-test probability is
+`0.00390625` for each endpoint. The Wilson 95% interval for an observed 8/8
+paired win proportion is [0.6756, 1.0000].
+
+Because all replicate outcomes were identical, the replicate-level SD and
+bootstrap interval for the paired recall improvement collapse to +0.2, and the
+paired delay improvement collapses to −1 sample. This demonstrates
+repeatability under the fixed laboratory protocol; it does not imply zero
+uncertainty in other deployments or implementations.
+
+### Preregistered decision
+
+All six preregistered replacement conditions were satisfied:
+
+1. 8/8 requested runs were valid (minimum required: 6);
+2. candidate was benign-alert-free in all 8 real traces;
+3. candidate FPR was 0 in every run, no higher than reference and below the
+   target 0.001;
+4. candidate detected every attack run;
+5. candidate mean sample recall 1.0 was strictly greater than reference 0.8;
+6. candidate median delay 0 was no worse than reference delay 1.
+
+The candidate also met the unchanged strict sample-level external target in
+8/8 runs, whereas the reference met it in 0/8.
+
+Under the preregistered rule, the 1/8 candidate is therefore eligible to replace
+2/12 as the default operating point. Promotion should be a separate repository
+change so that the preregistration/validation commit history remains auditable.
+
+Aggregate artifact:
+`frozen-candidate-validation-38060262689` (artifact ID `11673191863`).
