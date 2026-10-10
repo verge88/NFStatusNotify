@@ -143,6 +143,16 @@ def registered_endpoints() -> set[str]:
     return endpoints
 
 
+def instance_id_for_endpoint(endpoint: str) -> str | None:
+    for item in discovery():
+        if str(item.get("nfStatus", "")).upper() != "REGISTERED":
+            continue
+        if service_endpoint(item) == endpoint:
+            value = item.get("nfInstanceId")
+            return str(value) if value else None
+    return None
+
+
 def wait_endpoint(endpoint: str, present: bool = True, attempts: int = 50) -> None:
     for _ in range(attempts):
         try:
@@ -185,14 +195,15 @@ def sample_phase(
     out: Path,
     recovery_active: int,
     update_first: int,
+    replicate_id: int,
 ) -> None:
     for index in range(count):
         epoch, code = auth_probe(f"{phase}-{index}", out)
         rows.append(
             {
-                "run_id": "real-legit-failover-0",
+                "run_id": f"real-legit-failover-{replicate_id}",
                 "scenario": "real_legitimate_udm_failover",
-                "seed": 0,
+                "seed": replicate_id,
                 "t": len(rows),
                 "epoch": f"{epoch:.6f}",
                 "timestamp": datetime.fromtimestamp(epoch, timezone.utc).isoformat(),
@@ -227,13 +238,15 @@ def write_rows(path: Path, rows: list[dict[str, Any]]) -> None:
 
 def experiment(out: Path) -> None:
     out.mkdir(parents=True, exist_ok=True)
+    replicate_id = int(os.environ.get("LAB_REPLICATE_ID", "0"))
 
     udm_a = f"{docker_ip('udm')}:80"
     wait_endpoint(udm_a, True)
+    udm_a_instance_id = instance_id_for_endpoint(udm_a)
 
     rows: list[dict[str, Any]] = []
     phase_epochs: dict[str, float] = {"baseline_start": time.time()}
-    sample_phase(rows, "baseline", udm_a, 3, out, 0, 0)
+    sample_phase(rows, "baseline", udm_a, 3, out, 0, 0, replicate_id)
 
     run(
         [
@@ -255,26 +268,30 @@ def experiment(out: Path) -> None:
     )
     udm_b = f"{docker_ip('udm-b')}:80"
     wait_endpoint(udm_b, True)
+    udm_b_instance_id = instance_id_for_endpoint(udm_b)
 
     run(["docker", "stop", "-t", "8", "udm"])
     wait_endpoint(udm_a, False)
     phase_epochs["failover_start"] = time.time()
-    sample_phase(rows, "failover", udm_b, 5, out, 1, 1)
+    sample_phase(rows, "failover", udm_b, 5, out, 1, 1, replicate_id)
 
     run(["docker", "start", "udm"])
     wait_endpoint(udm_a, True)
     run(["docker", "stop", "-t", "8", "udm-b"])
     wait_endpoint(udm_b, False)
     phase_epochs["recovery_start"] = time.time()
-    sample_phase(rows, "recovery", udm_a, 3, out, 1, 1)
+    sample_phase(rows, "recovery", udm_a, 3, out, 1, 1, replicate_id)
     phase_epochs["experiment_end"] = time.time()
 
     write_rows(out / "observations-raw.csv", rows)
     meta = {
+        "replicate_id": replicate_id,
         "nrf_ip": docker_ip("nrf"),
         "ausf_ip": docker_ip("ausf"),
         "udm_a": udm_a,
         "udm_b": udm_b,
+        "udm_a_instance_id": udm_a_instance_id,
+        "udm_b_instance_id": udm_b_instance_id,
         "rows": len(rows),
         "phase_epochs": phase_epochs,
         "safety": "legitimate NRF-visible UDM failover; no forged notifications",

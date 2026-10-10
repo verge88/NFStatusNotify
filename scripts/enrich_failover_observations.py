@@ -71,12 +71,13 @@ def latest_cache(events: list[tuple[float, str]], epoch: float) -> str | None:
 def make_counterfactual(
     rows: list[dict[str, str]],
     baseline_endpoint: str,
+    replicate_id: int,
 ) -> list[dict[str, str]]:
     attack_start = min(int(row["t"]) for row in rows if row["phase"] == "failover")
     counter: list[dict[str, str]] = []
     for source in rows:
         row = dict(source)
-        row["run_id"] = "counterfactual-real-effect-0"
+        row["run_id"] = f"counterfactual-real-effect-{replicate_id}"
         row["scenario"] = "counterfactual_real_state_divergence"
         row["attack_start"] = str(attack_start)
 
@@ -159,7 +160,11 @@ def main() -> None:
     out = Path(args.out)
     write_csv(out, rows)
 
-    counter = make_counterfactual(rows, baseline_endpoint=meta["udm_a"])
+    counter = make_counterfactual(
+        rows,
+        baseline_endpoint=meta["udm_a"],
+        replicate_id=int(meta.get("replicate_id", 0)),
+    )
     write_csv(Path(args.counterfactual), counter)
 
     def phase_values(column: str, phase: str) -> list[str]:
