@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 
+from nfnotify_lab.detectors import build_detector
 from nfnotify_lab.evaluate import evaluate_all
 from nfnotify_lab.patef import provenance_normalized_attack_gate
 from nfnotify_lab.features import build_features
@@ -97,3 +98,31 @@ def test_patef_v2_gate_is_source_symmetric():
     )
 
     assert cache_gate.tolist() == route_gate.tolist()
+
+
+def test_patef_gate_only_exactly_matches_decision_gate():
+    scenario = next(
+        s for s in DEFAULT_SCENARIOS if s.name == "silent_dual_divergence"
+    )
+    features = build_features(simulate_run(scenario, seed=2, steps=50))
+    detector = build_detector("patef_gate_only", random_state=3)
+    detector.fit(features, features["attack_active"])
+
+    expected = provenance_normalized_attack_gate(features).to_numpy()
+    actual = detector.score_samples(features)
+    assert np.array_equal(actual, expected)
+
+
+def test_patef_learned_only_has_no_decision_gate_or_consensus_meta():
+    raw = simulate_dataset(DEFAULT_SCENARIOS, seeds=range(8), steps=50)
+    features = build_features(raw)
+    detector = build_detector("patef_learned_only", random_state=5)
+
+    assert detector.use_decision_gate is False
+    assert detector.include_consensus_meta is False
+    assert "consensus_support" not in detector.meta_features
+
+    detector.fit(features, features["attack_active"])
+    scores = detector.score_samples(features)
+    assert np.isfinite(scores).all()
+    assert ((scores >= 0.0) & (scores <= 1.0)).all()

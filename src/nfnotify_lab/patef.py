@@ -251,9 +251,27 @@ class ProvenanceAwareTemporalEvidenceFusion:
     requires_full_frame = True
     is_probability_score = False
 
-    def __init__(self, random_state: int = 0, stack_folds: int = 4) -> None:
+    def __init__(
+        self,
+        random_state: int = 0,
+        stack_folds: int = 4,
+        *,
+        use_decision_gate: bool = True,
+        include_consensus_meta: bool = True,
+    ) -> None:
         self.random_state = random_state
         self.stack_folds = stack_folds
+        self.use_decision_gate = use_decision_gate
+        self.include_consensus_meta = include_consensus_meta
+        self.meta_features = (
+            META_FEATURES
+            if include_consensus_meta
+            else tuple(
+                feature
+                for feature in META_FEATURES
+                if feature != "consensus_support"
+            )
+        )
         self.experts: dict[str, Pipeline] = {}
         self.fusion: LogisticRegression | None = None
         self.calibrator: LogisticRegression | None = None
@@ -351,7 +369,7 @@ class ProvenanceAwareTemporalEvidenceFusion:
         frame = self._ensure_temporal(x)
         expert = self._expert_probabilities(frame, models=models)
         meta = pd.concat([expert, self._availability(frame)], axis=1)
-        return meta[list(META_FEATURES)].astype(float)
+        return meta[list(self.meta_features)].astype(float)
 
     def fit(
         self, x: pd.DataFrame, y: pd.Series
@@ -366,7 +384,7 @@ class ProvenanceAwareTemporalEvidenceFusion:
 
         folds = min(self.stack_folds, len(unique_groups))
         splitter = GroupKFold(n_splits=folds)
-        oof = pd.DataFrame(index=frame.index, columns=META_FEATURES, dtype=float)
+        oof = pd.DataFrame(index=frame.index, columns=self.meta_features, dtype=float)
 
         for fold, (train_idx, valid_idx) in enumerate(
             splitter.split(frame, target, groups=groups)
@@ -378,7 +396,7 @@ class ProvenanceAwareTemporalEvidenceFusion:
                 fold_models[name] = model
 
             fold_meta = self._meta_frame(frame.iloc[valid_idx], models=fold_models)
-            oof.loc[fold_meta.index, list(META_FEATURES)] = fold_meta.to_numpy()
+            oof.loc[fold_meta.index, list(self.meta_features)] = fold_meta.to_numpy()
 
         self.fusion = LogisticRegression(
             max_iter=1000,
@@ -424,11 +442,14 @@ class ProvenanceAwareTemporalEvidenceFusion:
     def score_samples(self, x: pd.DataFrame) -> np.ndarray:
         frame = self._ensure_temporal(x)
         calibrated = self._calibrated_scores(frame)
+        if not self.use_decision_gate:
+            return calibrated
+
         gate = provenance_normalized_attack_gate(frame).to_numpy(dtype=float)
 
         # Gate-off rows are semantically ineligible, but assigning zero would
         # make the low-FPR threshold collapse to the smallest positive float
-        # and remove the learned fusion from the decision.  A neutral score
+        # and remove the learned fusion from the decision. A neutral score
         # preserves a meaningful threshold: an alert requires both semantic
         # eligibility and calibrated learned evidence above the neutral prior.
         return np.where(gate > 0.0, calibrated, PA_TEF_NEUTRAL_SCORE)
