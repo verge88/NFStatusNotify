@@ -83,3 +83,49 @@ The aggregate artifact contains:
 
 Raw evidence for every replicate is uploaded separately so the aggregate
 statistics can be independently recomputed.
+
+
+## Observed results
+
+GitHub Actions run `38055330313` completed successfully with **8/8 valid
+independent laboratory instantiations**. Across the eight runs the laboratory
+recorded 8 unique UDM-A NF instance IDs and 8 unique UDM-B NF instance IDs
+(16/16 unique identifiers in total).
+
+Detector outcomes were identical across all eight replicates:
+
+| Detector | Mean sample recall ± SD | Mean FPR | Attack runs detected | Median delay | Benign alert-free runs |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `consensus_guard` | 0.800 ± 0.000 | 0.000 | 8/8 | 1 sample | 8/8 |
+| `semantic_guard` | 0.000 ± 0.000 | 0.000 | 0/8 | n/a | 8/8 |
+| `patef` | 0.000 ± 0.000 | 0.000 | 0/8 | n/a | 8/8 |
+
+For `consensus_guard`, attack-run detection and benign alert-free execution
+were both 8/8. The Wilson 95% interval for each observed proportion is
+**[0.6756, 1.0000]**. The strict sample-level external target was met in 0/8
+runs, with Wilson 95% interval **[0.0000, 0.3244]**, because the intentional
+one-sample persistence delay keeps sample recall at 0.8 rather than 1.0.
+
+Because detector outcomes were identical in all eight runs, their replicate-level
+SD, IQR and bootstrap intervals collapse to the observed point values. This is
+evidence of repeatability under this fixed protocol, not evidence of zero
+uncertainty in other deployments.
+
+Infrastructure timing showed measurable run-to-run variation:
+
+| Metric | Mean ± SD | Median | IQR | Range | Bootstrap mean 95% CI |
+| --- | ---: | ---: | ---: | --- | --- |
+| Failover duration | 27.229 ± 1.041 s | 26.935 s | 0.200 s | 26.461–29.760 s | 26.761–28.000 s |
+| Recovery duration | 15.804 ± 0.427 s | 15.656 s | 0.072 s | 15.492–16.834 s | 15.609–16.120 s |
+| Total experiment duration | 59.892 ± 1.846 s | 59.325 s | 0.553 s | 58.243–64.230 s | 58.973–61.260 s |
+
+Decoded evidence was highly stable: notification frames were 4/4/…/4 in every
+replicate and authentication-route frames were 11 in every replicate.
+AUSF cache-event count varied from 6 to 8 (mean 7.25, SD 1.04, median 8,
+IQR 2), showing that internal event logging can vary even when the reconstructed
+semantic A→B→A state sequence and detector result remain unchanged.
+
+The aggregate artifact is
+`open5gs-replicate-study-38055330313` (artifact ID `11671791532`).
+Raw evidence for all eight runs is stored in the corresponding per-replicate
+artifacts from the same workflow run.
