@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "reference_main_commit": "247cfe9a2ea3ef1e0173ce08d904102fb844e29e",
+  "operating_point": {
+    "detector": "consensus_guard",
+    "dual_source_persistence_steps": 1,
+    "single_source_persistence_steps": 8,
+    "target_fpr": 0.001
+  },
+  "claims": [
+    {
+      "id": "C1",
+      "claim": "Promoted consensus_guard reaches scenario-disjoint FPR 0 with pooled attack recall 0.949091 on the 12-scenario benchmark.",
+      "run_id": 38062366609,
+      "artifact_id": 11673802398,
+      "artifact_name": "patef-benchmark-38062366609",
+      "kind": "synthetic_benchmark"
+    },
+    {
+      "id": "C2",
+      "claim": "Promoted consensus_guard is benign-alert-free on the real A-B-A trace and reaches counterfactual sample recall 1.0, empirical FPR 0, and detection delay 0.",
+      "run_id": 38062366995,
+      "artifact_id": 11673632875,
+      "artifact_name": "open5gs-failover-38062366995",
+      "kind": "real_failover"
+    },
+    {
+      "id": "C3",
+      "claim": "Promoted consensus_guard remains alert-free across four fresh real Open5GS runs and 15 benign degraded-observer views per run.",
+      "run_id": 38062366593,
+      "artifact_id": 11673732682,
+      "artifact_name": "open5gs-benign-degradation-study-38062366593",
+      "kind": "real_benign_degradation"
+    },
+    {
+      "id": "C4",
+      "claim": "The real recovery control produces trusted NRF-to-AUSF NFStatusNotify evidence without a consensus_guard alert.",
+      "run_id": 38062366595,
+      "artifact_id": 11673992352,
+      "artifact_name": "open5gs-real-observations-38062366595",
+      "kind": "real_recovery"
+    },
+    {
+      "id": "C5",
+      "claim": "The development-selected 1/8 candidate satisfied all preregistered replacement conditions in 8/8 fresh Open5GS laboratories.",
+      "run_id": 38060262689,
+      "artifact_id": 11673191863,
+      "artifact_name": "frozen-candidate-validation-38060262689",
+      "kind": "preregistered_candidate_validation"
+    },
+    {
+      "id": "C6",
+      "claim": "Development-only sensitivity identifies 1/8 as the sole Pareto point in the predefined persistence grid.",
+      "run_id": 38058210231,
+      "artifact_id": 11671748356,
+      "artifact_name": "consensus-sensitivity-38058210231",
+      "kind": "development_sensitivity"
+    },
+    {
+      "id": "C7",
+      "claim": "Eight fresh Open5GS laboratories reproduce the historical 2/12 result and quantify run-to-run infrastructure dispersion.",
+      "run_id": 38055330313,
+      "artifact_id": 11671791532,
+      "artifact_name": "open5gs-replicate-study-38055330313",
+      "kind": "historical_replication"
+    }
+  ],
+  "safety_boundary": "No forged NFStatusNotify exploit payload is delivered. Real attack-like validation uses a counterfactual distributed-state post-effect derived from real Open5GS telemetry.",
+  "manual_publication_blockers": [
+    "Choose and add a repository license.",
+    "Replace provisional citation metadata with the final author list.",
+    "Archive the consolidated publication bundle in Zenodo/OSF and record the DOI."
+  ]
+}
