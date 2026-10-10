@@ -54,10 +54,14 @@ single-source divergence. Это специально лишает semantic guar
 1. `rules`: детерминированная оценка семантических противоречий.
 2. `semantic_guard`: exact deterministic baseline для semantic support,
    используемого PA-TEF.
-3. `isolation_forest`: unsupervised baseline, обучаемый только на benign train.
-4. `provenance_aware`: supervised baseline, явно использующий маски и
+3. `consensus_guard`: deterministic source-consensus baseline. Bad-notify
+   escalates immediately, dual-source divergence requires two consecutive
+   samples, while single-source divergence requires a full 12-sample
+   persistence window.
+4. `isolation_forest`: unsupervised baseline, обучаемый только на benign train.
+5. `provenance_aware`: supervised baseline, явно использующий маски и
    provenance.
-5. `patef`: learned evidence fusion поверх того же semantic support.
+6. `patef`: learned evidence fusion поверх того же semantic support.
 
 ## Разделение данных
 
@@ -112,6 +116,28 @@ CI.
 теряет attack recall при строгом low-FPR threshold, а PA-TEF улучшает recall,
 но scenario-disjoint FPR остаётся выше целевых 0,1%. Поэтому external controls
 не должны заранее назначать один из них production-кандидатом.
+
+## Source-consensus hypothesis
+
+Calibration diagnostics показывают, что max-score benign ties у
+`semantic_guard` создаются короткими single-source observer-skew эпизодами.
+Это мотивирует отдельную, заранее интерпретируемую гипотезу: подтверждение от
+двух независимых state-observer имеет большую доказательную силу, чем
+расхождение только одного observer.
+
+`consensus_guard` поэтому использует asymmetric persistence:
+
+- bad/untrusted notify: immediate;
+- dual-source state conflict: минимум 2 последовательных sample;
+- single-source state conflict: минимум 12 последовательных sample.
+
+Число 12 соответствует уже существующему максимальному temporal aggregation
+window, а не длине конкретного observer-skew сценария. Цена такой
+консервативности должна измеряться через detection delay и recall на
+persistent single-source divergence.
+
+Этот baseline не заменяет `semantic_guard`; оба сохраняются, чтобы можно было
+отделить выигрыш от source-consensus semantics от learned fusion.
 
 ## Calibration / transfer diagnostics
 

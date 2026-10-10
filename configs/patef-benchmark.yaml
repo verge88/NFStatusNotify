@@ -17,6 +17,7 @@ research:
   compare:
     - rules
     - semantic_guard
+    - consensus_guard
     - isolation_forest
     - provenance_aware
     - patef
