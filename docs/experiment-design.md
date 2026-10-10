@@ -93,10 +93,11 @@ event и mask-поля выбранного источника, после че�
 
 ## Внешние Open5GS controls
 
-Реальные benign/recovery traces и контрфактический replay оцениваются двумя
+Реальные benign/recovery traces и контрфактический replay оцениваются тремя
 детекторами на одном и том же входе и synthetic calibration:
 
-- `semantic_guard` — обязательный deterministic comparator;
+- `semantic_guard` — исходный deterministic semantic comparator;
+- `consensus_guard` — deterministic source-consensus comparator;
 - `patef` — learned comparator.
 
 Workflow success означает, что реальная A→B→A лаборатория и её evidence
@@ -111,11 +112,26 @@ CI.
 отрицательный detector-result остаётся видимым в artifact, но не маскируется
 как инфраструктурная ошибка.
 
-На текущем 12-сценарном hard-generalization benchmark ни один из двух методов
-не удовлетворяет всем требованиям deployable candidate: `semantic_guard`
-теряет attack recall при строгом low-FPR threshold, а PA-TEF улучшает recall,
-но scenario-disjoint FPR остаётся выше целевых 0,1%. Поэтому external controls
-не должны заранее назначать один из них production-кандидатом.
+На текущем 12-сценарном hard-generalization benchmark `consensus_guard`
+удерживает scenario-disjoint FPR на 0 и даёт pooled attack recall 0.914,
+в то время как PA-TEF имеет более высокий recall, но превышает целевой FPR на
+невиденных observer-skew сценариях. `semantic_guard` при строгой calibration
+теряет attack recall из-за max-score ties.
+
+### Real consensus transfer result
+
+В Open5GS A→B→A validation run `38051681251` все три метода дали 0 benign
+alerts на реальной трассе. На counterfactual post-effect, построенном из той же
+реальной AUSF/route evidence, результаты были:
+
+- `semantic_guard`: recall 0.0, FPR 0.0;
+- `consensus_guard`: recall 0.8 (4/5 attack samples), FPR 0.0;
+- `patef`: recall 0.0, FPR 0.0.
+
+Таким образом, source-consensus semantics переносится на real-derived trace
+лучше двух прежних методов, но строгий внешний target recall=1.0 пока не
+достигнут. Этот результат является evidence в пользу дальнейшего исследования,
+а не claim о deployable detector.
 
 ## Source-consensus hypothesis
 
