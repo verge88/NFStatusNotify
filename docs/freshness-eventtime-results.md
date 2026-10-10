@@ -58,3 +58,23 @@ The deterministic timestamp alignment changes some input discrepancy features: s
 The exact residual false-positive mechanisms (which held-out benign scenarios, specific event windows and feature/gate interactions) must be isolated with a **separate post-hoc diagnostic** before any redesign. Do not retrospectively relabel the locked test a success, tune on its results, or claim learned improvement. A next new study would require trustworthy source capture timestamps in the real adapter and a newly preregistered independent evaluation with scenario/domain novelty.
 
 No change to `main` or frozen publication evidence. Keep this branch and PR as a **draft negative finding**.
+
+
+## Post-hoc failure localization (NOT an additional independent validation)
+
+The separate [post-hoc job 38077772309](https://github.com/verge88/NFStatusNotify/actions/runs/38077772309) completed successfully; [artifact 11678794176](https://github.com/verge88/NFStatusNotify/actions/runs/38077772309/artifacts/11678794176) includes `false-alarm-by-scenario.csv`, point-level `false-alarm-points.csv` (timestamps, source origin times and gate features), and `error-attribution.json`. No detector was fitted to held-out scenarios or retuned.
+
+**Residual false-positive attribution:**
+
+| View | Unaligned false positives | Aligned false positives | Heldout benign scenario(s) |
+| --- | ---: | ---: | --- |
+| route_lag4 | 160 | 160 | `udm_recovery` (160/160) |
+| both_lag2 | 80 | 80 | `udm_recovery` (80/80) |
+| route_jitter2_6 | 120 | 120 | `udm_recovery` (120/120) |
+| route_lag8 | 400 | 480 | `udm_recovery` (320 both), `delayed_notify` (80 unaligned, 160 aligned) |
+
+Each named benign scenario has 40 runs x 90 samples = 3,600 samples. The `udm_recovery` case explains **all** FPs in route_lag4 and both_lag2. The source-time alignment introduced **80 additional false positives** in `delayed_notify` with eight-sample route lag.
+
+**Mechanistic diagnosis (interpretation of measured outcome and simulator implementation, not independently validated causality):** The benign `udm_recovery` route has a temporary unavailable endpoint through the recovery interval, followed by recovery completion. A route observer lag causes a *historical during-recovery* route snapshot to arrive **after** the contemporaneous `recovery_active` flag is cleared. The algorithm aligns the NRF comparison but leaves recovery/context and temporal grace logic on the arrival-time axis. Thus it can raise false alerts against a semantically legitimate historical state. Similarly, the long route lag and delayed notification can cross the 12-step transition grace context. The data support prioritizing causal **alignment of both state and its explanatory transition/recovery context**, not changing just the state comparison.
+
+These findings were obtained after observing the benchmark's negative result. They are useful for designing a future preregistered hypothesis, but must not be used to claim that any untested context-alignment change has already solved the problem.
