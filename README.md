@@ -96,6 +96,7 @@ nfnotify-lab all --config configs/experiment.yaml --out artifacts
 - [Publication robustness experiments](docs/publication-robustness.md)
 - [Frozen 1/8 candidate validation](docs/frozen-candidate-validation.md)
 - [Publication artifact freeze](docs/publication-freeze.md)
+- [Related-work and novelty ledger](docs/related-work-ledger.md)
 - [Контракт подключения Open5GS telemetry](adapters/open5gs/README.md)
 
 ## Интеграция с Open5GS
