@@ -16,6 +16,7 @@ research:
     - detected_attack_runs
   compare:
     - rules
+    - semantic_guard
     - isolation_forest
     - provenance_aware
     - patef

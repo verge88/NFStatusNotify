@@ -60,6 +60,22 @@ scenario template. It was added after scenario-disjoint validation showed that
 a purely learned fusion over-alerted on previously unseen delayed updates,
 missing telemetry and recovery windows.
 
+## Fair deterministic baseline
+
+The semantic transition guard is also exposed as the standalone
+`semantic_guard` detector. It uses exactly the same `semantic_attack_support()`
+signal as PA-TEF but contains no learned expert or fusion model.
+
+This comparison is mandatory for interpreting the research hypothesis. If
+PA-TEF and `semantic_guard` have the same recall/FPR under scenario-disjoint
+evaluation, the observed gain comes from the domain semantics rather than from
+ML. That is a valid negative result: the detector should then remain primarily
+deterministic unless later experiments show a reproducible ML increment.
+
+The benchmark writes the PA-TEF minus semantic-guard recall/FPR deltas to
+`hypothesis-check.json`; hypothesis status is reported but is not used to make
+CI pass or fail.
+
 ## Output
 
 `risk_report()` returns:
@@ -87,6 +103,25 @@ The implementation reports:
 The real Open5GS GitHub Actions recovery scenario is also scored as an external
 benign control. The later A→B→A failover experiment additionally records real
 NRF state, AUSF cache evidence and the actual UDM route.
+
+## Current hypothesis result
+
+On the fixed 60-seed benchmark at target FPR 0.1%, the standalone
+`semantic_guard` and PA-TEF produce identical decisions:
+
+- ordinary run-level split: FPR 0 and Recall 1.0 for both;
+- scenario-disjoint holdout: pooled FPR 0.000032 and Recall 1.0 for both;
+- worst unseen benign-scenario FPR: 0.000185 for both;
+- the no-NRF ablation is also identical and remains the main weakness
+  (Recall 0.069818).
+
+Accordingly, `hypothesis-check.json` reports
+`scenario_disjoint_ml_advantage_observed: false`. The present evidence does
+**not** support claiming that learned evidence fusion improves detection beyond
+the specialized deterministic semantics. PA-TEF remains useful as an
+experimental comparator, but the current deployable candidate should be treated
+as the semantic guard unless a later dataset demonstrates reproducible
+incremental value from ML.
 
 ## Scientific interpretation
 

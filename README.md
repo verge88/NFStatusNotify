@@ -25,12 +25,15 @@ poisoning, но не содержит эксплуатационного сет�
 
 ## Сравниваемые методы
 
-- `rules` — жёсткий semantic-consistency baseline;
+- `rules` — базовый semantic-consistency baseline;
+- `semantic_guard` — специализированный детерминированный baseline с тем же semantic transition guard, что и PA-TEF;
 - `isolation_forest` — unsupervised baseline, обучение только на benign train;
 - `provenance_aware` — ML baseline, использующий признаки рассогласования,
   маски доступности и provenance;
 - `patef` — provenance-aware temporal evidence fusion: независимые evidence
-  experts, availability gating и out-of-fold fusion.
+  experts, availability gating и out-of-fold fusion. Его вклад оценивается
+  отдельно относительно `semantic_guard`, чтобы не приписывать ML эффект
+  доменным правилам.
 
 Текущая provenance-aware модель — **исследовательская отправная точка**, а не
 заявление о научной новизне. Новизну следует доказывать через новый метод

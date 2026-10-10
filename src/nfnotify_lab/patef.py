@@ -124,6 +124,41 @@ def _expert_model(random_state: int) -> Pipeline:
     )
 
 
+def semantic_attack_support(x: pd.DataFrame) -> pd.Series:
+    """Deterministic domain-semantic evidence for a suspicious post-effect.
+
+    This function is intentionally public so the exact same semantic guard can
+    be evaluated as a standalone baseline. PA-TEF must beat that baseline to
+    claim an empirical contribution from learned evidence fusion.
+    """
+    bad_notify = x["recent_bad_notify_seen_6"].fillna(0.0).clip(0.0, 1.0)
+    recovery = x["recovery_active"].fillna(0.0).clip(0.0, 1.0)
+    observed_transition = pd.concat(
+        [
+            x["recent_nrf_update_seen_12"].fillna(0.0),
+            x["recent_nrf_endpoint_changed_12"].fillna(0.0),
+        ],
+        axis=1,
+    ).max(axis=1)
+    transition_block = np.maximum(recovery, observed_transition)
+    persistence = (
+        (x["state_conflict_persist"].fillna(0.0) - 1.0) / 3.0
+    ).clip(0.0, 1.0)
+    coverage = x["evidence_coverage"].fillna(0.0).clip(0.0, 1.0)
+
+    unexplained = x["state_conflict"].fillna(0.0) * (1.0 - transition_block)
+    state_support = unexplained * persistence * coverage
+    temporal_support = (
+        x["delta_time"].fillna(0.0) * (1.0 - transition_block) * coverage
+    )
+
+    support = pd.concat(
+        [bad_notify, state_support, temporal_support],
+        axis=1,
+    ).max(axis=1)
+    return support.clip(0.0, 1.0)
+
+
 class ProvenanceAwareTemporalEvidenceFusion:
     """Specialized NFStatusNotify post-effect detector.
 
@@ -195,37 +230,6 @@ class ProvenanceAwareTemporalEvidenceFusion:
             },
             index=x.index,
         )
-
-    @staticmethod
-    def _semantic_support(x: pd.DataFrame) -> pd.Series:
-        bad_notify = x["recent_bad_notify_seen_6"].fillna(0.0).clip(0.0, 1.0)
-        recovery = x["recovery_active"].fillna(0.0).clip(0.0, 1.0)
-        observed_transition = pd.concat(
-            [
-                x["recent_nrf_update_seen_12"].fillna(0.0),
-                x["recent_nrf_endpoint_changed_12"].fillna(0.0),
-            ],
-            axis=1,
-        ).max(axis=1)
-        transition_block = np.maximum(recovery, observed_transition)
-        persistence = (
-            (x["state_conflict_persist"].fillna(0.0) - 1.0) / 3.0
-        ).clip(0.0, 1.0)
-        coverage = x["evidence_coverage"].fillna(0.0).clip(0.0, 1.0)
-
-        unexplained = (
-            x["state_conflict"].fillna(0.0) * (1.0 - transition_block)
-        )
-        state_support = unexplained * persistence * coverage
-        temporal_support = (
-            x["delta_time"].fillna(0.0) * (1.0 - transition_block) * coverage
-        )
-
-        support = pd.concat(
-            [bad_notify, state_support, temporal_support],
-            axis=1,
-        ).max(axis=1)
-        return support.clip(0.0, 1.0)
 
     def _expert_probabilities(
         self, x: pd.DataFrame, models: dict[str, Pipeline] | None = None
@@ -321,14 +325,14 @@ class ProvenanceAwareTemporalEvidenceFusion:
     def score_samples(self, x: pd.DataFrame) -> np.ndarray:
         frame = self._ensure_temporal(x)
         calibrated = self._calibrated_scores(frame)
-        support = self._semantic_support(frame).to_numpy()
+        support = semantic_attack_support(frame).to_numpy()
         return calibrated * support
 
     def risk_report(self, x: pd.DataFrame) -> pd.DataFrame:
         frame = self._ensure_temporal(x)
         expert = self._expert_probabilities(frame)
         availability = self._availability(frame)
-        support = self._semantic_support(frame)
+        support = semantic_attack_support(frame)
         risk = self.score_samples(frame)
 
         confidence = (

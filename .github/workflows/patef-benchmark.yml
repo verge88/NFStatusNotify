@@ -7,9 +7,12 @@ on:
       - main
       - research/patef-specialized-detector
       - research/scenario-disjoint-evaluation
+      - research/semantic-guard-baseline
     paths:
       - ".github/workflows/patef-benchmark.yml"
       - "src/nfnotify_lab/**"
+      - "tests/test_holdout.py"
+      - "tests/test_smoke.py"
       - "configs/patef-benchmark.yaml"
       - "pyproject.toml"
 
@@ -42,6 +45,8 @@ jobs:
           holdout = pd.read_csv(root / "scenario-holdout-summary.csv")
           patef = metrics.loc[metrics["detector"] == "patef"].iloc[0]
           patef_holdout = holdout.loc[holdout["detector"] == "patef"].iloc[0]
+          semantic = metrics.loc[metrics["detector"] == "semantic_guard"].iloc[0]
+          semantic_holdout = holdout.loc[holdout["detector"] == "semantic_guard"].iloc[0]
           rules = metrics.loc[metrics["detector"] == "rules"].iloc[0]
 
           assert patef["fpr"] <= 0.005, patef.to_dict()
@@ -64,6 +69,32 @@ jobs:
               ],
           ]
 
+          import json
+
+          hypothesis = {
+              "run_level_recall_gain": float(
+                  patef["recall_at_target_fpr"] - semantic["recall_at_target_fpr"]
+              ),
+              "run_level_fpr_delta": float(patef["fpr"] - semantic["fpr"]),
+              "scenario_disjoint_recall_gain": float(
+                  patef_holdout["unseen_attack_recall"]
+                  - semantic_holdout["unseen_attack_recall"]
+              ),
+              "scenario_disjoint_fpr_delta": float(
+                  patef_holdout["unseen_scenario_fpr"]
+                  - semantic_holdout["unseen_scenario_fpr"]
+              ),
+              "scenario_disjoint_ml_advantage_observed": bool(
+                  patef_holdout["unseen_attack_recall"]
+                  > semantic_holdout["unseen_attack_recall"]
+                  and patef_holdout["unseen_scenario_fpr"]
+                  <= semantic_holdout["unseen_scenario_fpr"]
+              ),
+          }
+          (root / "hypothesis-check.json").write_text(
+              json.dumps(hypothesis, indent=2), encoding="utf-8"
+          )
+
           lines = [
               "## PA-TEF benchmark",
               "",
@@ -74,6 +105,7 @@ jobs:
               f"- PA-TEF ROC-AUC: {patef['roc_auc']:.6f}",
               f"- PA-TEF median delay: {patef['median_detection_delay']}",
               f"- Rules Recall@target-FPR: {rules['recall_at_target_fpr']:.6f}",
+              f"- Semantic-guard Recall@target-FPR: {semantic['recall_at_target_fpr']:.6f}",
               "",
               "### Scenario-disjoint holdout",
               f"- held-out scenarios: {int(patef_holdout['heldout_scenarios'])}",
@@ -87,11 +119,26 @@ jobs:
                   f"{patef_holdout['minimum_attack_scenario_recall']:.6f}"
               ),
               f"- worst scenario FPR: {patef_holdout['worst_scenario_fpr']:.6f}",
+              "",
+              "### ML contribution check",
+              (
+                  "- scenario-disjoint recall gain vs semantic guard: "
+                  f"{hypothesis['scenario_disjoint_recall_gain']:.6f}"
+              ),
+              (
+                  "- scenario-disjoint FPR delta vs semantic guard: "
+                  f"{hypothesis['scenario_disjoint_fpr_delta']:.6f}"
+              ),
+              (
+                  "- ML advantage observed: "
+                  f"{hypothesis['scenario_disjoint_ml_advantage_observed']}"
+              ),
           ]
           Path("patef-summary.md").write_text("\n".join(lines), encoding="utf-8")
           print(metrics.to_string(index=False))
           print(holdout.to_string(index=False))
           print(patef_detail.to_string(index=False))
+          print(json.dumps(hypothesis, indent=2))
           PY
           cat patef-summary.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4

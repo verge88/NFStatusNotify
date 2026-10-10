@@ -20,6 +20,7 @@ def test_scenario_holdout_never_trains_on_heldout_scenario():
 
     assert set(holdout["detector"]) == {
         "rules",
+        "semantic_guard",
         "isolation_forest",
         "provenance_aware",
         "patef",
