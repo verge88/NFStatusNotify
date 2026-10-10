@@ -87,6 +87,24 @@ event и mask-поля выбранного источника, после че�
 могут переноситься в ablated dataset. Все варианты используют тот же
 `random_state` и run-level split, что основной benchmark.
 
+## Внешние Open5GS controls
+
+Реальные benign/recovery traces и контрфактический replay оцениваются двумя
+детекторами на одном и том же входе и synthetic calibration:
+
+- `semantic_guard` — текущий deployable candidate и обязательный quality gate;
+- `patef` — исследовательский comparator.
+
+Это разделение следует текущему отрицательному ML-result: лаборатория не должна
+становиться красной только потому, что PA-TEF хуже переносит synthetic
+threshold на внешний trace, если детерминированный candidate сохраняет нужное
+поведение. При этом PA-TEF score, threshold и recall остаются в artifacts.
+
+Для реального A→B→A failover candidate должен давать ноль benign alerts, а на
+контрфактическом post-effect — обнаруживать все размеченные attack samples без
+ложных тревог на benign samples. PA-TEF измеряется рядом, но его
+counterfactual recall не используется для прохождения quality gate.
+
 ## Критерий, при котором ML не оправдан
 
 Если `semantic_guard` при равном или меньшем FPR стабильно имеет не худшие

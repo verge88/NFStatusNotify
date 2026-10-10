@@ -7,7 +7,7 @@ import pandas as pd
 import yaml
 
 from .ablation import evaluate_ablations
-from .control import score_benign_control
+from .control import CONTROL_DETECTORS, score_benign_control
 from .evaluate import (
     evaluate_all,
     evaluate_by_scenario,
@@ -68,6 +68,12 @@ def main() -> None:
     parser.add_argument(
         "--observations",
         help="CSV following the Open5GS telemetry adapter contract; used by 'ingest'",
+    )
+    parser.add_argument(
+        "--detector",
+        choices=CONTROL_DETECTORS,
+        default="patef",
+        help="detector used by 'score-control' (default: patef)",
     )
     args = parser.parse_args()
 
@@ -136,6 +142,7 @@ def main() -> None:
             random_state=random_state,
             training_seeds=int(cfg["research"].get("control_training_seeds", 60)),
             steps=int(cfg["dataset"]["steps"]),
+            detector_name=args.detector,
         )
         print(summary)
 

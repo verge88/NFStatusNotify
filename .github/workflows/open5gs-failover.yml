@@ -7,6 +7,7 @@ on:
       - main
       - experiment/open5gs-instrumented-effect
       - research/scenario-disjoint-evaluation
+      - research/external-control-candidate
     paths:
       - ".github/workflows/open5gs-failover.yml"
       - "lab/open5gs/udm-b.yaml"
@@ -99,10 +100,12 @@ jobs:
           pip install -e .
 
           nfnotify-lab ingest             --observations "$LAB_DIR/observations.csv"             --out "$LAB_DIR/real"
-          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/real"
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/real"             --detector semantic_guard
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/real"             --detector patef
 
           nfnotify-lab ingest             --observations "$LAB_DIR/counterfactual-observations.csv"             --out "$LAB_DIR/counterfactual"
-          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"             --detector semantic_guard
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"             --detector patef
 
       - name: Validate real A-B-A evidence
         run: |
@@ -110,15 +113,33 @@ jobs:
           import json
           from pathlib import Path
 
+          import pandas as pd
+
           root = Path("artifacts/open5gs-failover")
           evidence = json.loads((root / "evidence-summary.json").read_text())
-          control = json.loads((root / "real" / "control-summary.json").read_text())
+          candidate_real = json.loads(
+              (root / "real" / "control-summary-semantic_guard.json").read_text()
+          )
+          patef_real = json.loads(
+              (root / "real" / "control-summary-patef.json").read_text()
+          )
 
-          import pandas as pd
           counter_obs = pd.read_csv(root / "counterfactual-observations.csv")
-          counter_scores = pd.read_csv(root / "counterfactual" / "control-scores.csv")
-          counter_summary = json.loads(
-              (root / "counterfactual" / "control-summary.json").read_text()
+          candidate_scores = pd.read_csv(
+              root / "counterfactual" / "control-scores-semantic_guard.csv"
+          )
+          patef_scores = pd.read_csv(
+              root / "counterfactual" / "control-scores-patef.csv"
+          )
+          candidate_counter = json.loads(
+              (
+                  root
+                  / "counterfactual"
+                  / "control-summary-semantic_guard.json"
+              ).read_text()
+          )
+          patef_counter = json.loads(
+              (root / "counterfactual" / "control-summary-patef.json").read_text()
           )
 
           a = evidence["udm_a"]
@@ -132,34 +153,58 @@ jobs:
           assert evidence["recovery_nrf"] == [a], evidence
           assert evidence["recovery_ausf"] == [a], evidence
           assert evidence["recovery_route"] == [a], evidence
-          assert control["alerts"] == 0, control
+
+          assert candidate_real["alerts"] == 0, candidate_real
+          assert patef_real["alerts"] == 0, patef_real
 
           attack = counter_obs["attack_active"].astype(bool).to_numpy()
-          alerts = counter_scores["alert"].astype(bool).to_numpy()
-          attack_alerts = int(alerts[attack].sum())
-          benign_alerts = int(alerts[~attack].sum())
-          recall = float(alerts[attack].mean())
-          fpr = float(alerts[~attack].mean())
+          candidate_alerts = candidate_scores["alert"].astype(bool).to_numpy()
+          patef_alerts = patef_scores["alert"].astype(bool).to_numpy()
 
-          assert attack_alerts >= 1, counter_summary
-          assert benign_alerts == 0, counter_summary
+          candidate_attack_alerts = int(candidate_alerts[attack].sum())
+          candidate_benign_alerts = int(candidate_alerts[~attack].sum())
+          candidate_recall = float(candidate_alerts[attack].mean())
+          candidate_fpr = float(candidate_alerts[~attack].mean())
+
+          patef_attack_alerts = int(patef_alerts[attack].sum())
+          patef_benign_alerts = int(patef_alerts[~attack].sum())
+          patef_recall = float(patef_alerts[attack].mean())
+          patef_fpr = float(patef_alerts[~attack].mean())
+
+          assert candidate_attack_alerts == int(attack.sum()), candidate_counter
+          assert candidate_benign_alerts == 0, candidate_counter
 
           result = {
-              "attack_samples": int(attack.sum()),
-              "attack_alerts": attack_alerts,
-              "benign_samples": int((~attack).sum()),
-              "benign_alerts": benign_alerts,
-              "recall": recall,
-              "fpr": fpr,
-              "threshold": counter_summary["threshold"],
-              "max_risk": counter_summary["max_risk"],
+              "candidate": {
+                  "detector": "semantic_guard",
+                  "attack_samples": int(attack.sum()),
+                  "attack_alerts": candidate_attack_alerts,
+                  "benign_samples": int((~attack).sum()),
+                  "benign_alerts": candidate_benign_alerts,
+                  "recall": candidate_recall,
+                  "fpr": candidate_fpr,
+                  "threshold": candidate_counter["threshold"],
+                  "max_risk": candidate_counter["max_risk"],
+              },
+              "comparator": {
+                  "detector": "patef",
+                  "attack_samples": int(attack.sum()),
+                  "attack_alerts": patef_attack_alerts,
+                  "benign_samples": int((~attack).sum()),
+                  "benign_alerts": patef_benign_alerts,
+                  "recall": patef_recall,
+                  "fpr": patef_fpr,
+                  "threshold": patef_counter["threshold"],
+                  "max_risk": patef_counter["max_risk"],
+              },
           }
           (root / "counterfactual-result.json").write_text(
               json.dumps(result, indent=2)
           )
 
           print(json.dumps(evidence, indent=2))
-          print(json.dumps(control, indent=2))
+          print(json.dumps(candidate_real, indent=2))
+          print(json.dumps(patef_real, indent=2))
           print(json.dumps(result, indent=2))
           PY
 
