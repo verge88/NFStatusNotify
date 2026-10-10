@@ -1,0 +1,28 @@
+schema_version: 1
+
+selection:
+  locked: true
+  method: development-only scenario-disjoint Pareto selection
+  development_run_id: 38058210231
+  development_artifact_id: 11671748356
+  real_attack_like_validation_used_for_selection: false
+  selection_note: >
+    The candidate was selected as the sole Pareto point in the predefined
+    persistence grid before the independent real attack-like validation runs
+    in this study were started.
+
+calibration:
+  target_fpr: 0.001
+  random_state: 42
+  training_seeds: 60
+  steps: 90
+
+reference:
+  name: consensus_reference_2_12
+  single_source_steps: 12
+  dual_source_steps: 2
+
+candidate:
+  name: consensus_candidate_1_8
+  single_source_steps: 8
+  dual_source_steps: 1
