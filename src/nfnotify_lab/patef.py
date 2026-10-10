@@ -8,6 +8,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GroupKFold
 from sklearn.pipeline import Pipeline
 
+from .consensus import consensus_attack_support
 from .temporal import add_temporal_features
 
 
@@ -97,6 +98,11 @@ EXPERT_FEATURES: dict[str, tuple[str, ...]] = {
     ),
 }
 
+PA_TEF_SINGLE_SOURCE_PERSISTENCE_STEPS = 7
+PA_TEF_DUAL_SOURCE_PERSISTENCE_STEPS = 1
+PA_TEF_NEUTRAL_SCORE = 0.5
+
+
 META_FEATURES = (
     "p_state",
     "p_notify",
@@ -115,6 +121,7 @@ META_FEATURES = (
     "conflict_source_fraction",
     "recent_bad_notify",
     "unexplained_conflict",
+    "consensus_support",
 )
 
 
@@ -176,6 +183,56 @@ def semantic_attack_support(x: pd.DataFrame) -> pd.Series:
     return support.clip(0.0, 1.0)
 
 
+def provenance_normalized_attack_gate(
+    x: pd.DataFrame,
+    *,
+    single_source_steps: int = PA_TEF_SINGLE_SOURCE_PERSISTENCE_STEPS,
+    dual_source_steps: int = PA_TEF_DUAL_SOURCE_PERSISTENCE_STEPS,
+) -> pd.Series:
+    """Source-symmetric gate that separates evidence eligibility from coverage.
+
+    Persistence parameters are explicit so development-only sweeps can test
+    whether a more permissive semantic eligibility envelope gives learned
+    fusion room to add value. Production/default behavior remains 7/1.
+    """
+    if single_source_steps < 1 or dual_source_steps < 1:
+        raise ValueError("persistence steps must be >= 1")
+
+    bad_notify = x["recent_bad_notify_seen_6"].fillna(0.0).clip(0.0, 1.0)
+    recovery = x["recovery_active"].fillna(0.0).clip(0.0, 1.0)
+    observed_transition = pd.concat(
+        [
+            x["recent_nrf_update_seen_12"].fillna(0.0),
+            x["recent_nrf_endpoint_changed_12"].fillna(0.0),
+        ],
+        axis=1,
+    ).max(axis=1)
+    transition_block = np.maximum(recovery, observed_transition)
+
+    dual_ready = (
+        x["dual_source_conflict_persist"].fillna(0.0) >= dual_source_steps
+    ).astype(float)
+    single_ready = (
+        x["single_source_conflict_persist"].fillna(0.0) >= single_source_steps
+    ).astype(float)
+    full_state_support = np.maximum(dual_ready, single_ready) * (
+        1.0 - transition_block
+    )
+
+    partial_state_view = x["state_pair_available_count"].fillna(0.0).eq(1.0)
+    persistent_partial_conflict = (
+        partial_state_view
+        & x["state_conflict"].fillna(0.0).gt(0.0)
+        & x["state_conflict_persist"].fillna(0.0).ge(single_source_steps)
+    ).astype(float)
+    partial_support = persistent_partial_conflict * (1.0 - transition_block)
+
+    return pd.concat(
+        [bad_notify, full_state_support, partial_support],
+        axis=1,
+    ).max(axis=1).clip(0.0, 1.0)
+
+
 class ProvenanceAwareTemporalEvidenceFusion:
     """Specialized NFStatusNotify post-effect detector.
 
@@ -183,18 +240,41 @@ class ProvenanceAwareTemporalEvidenceFusion:
     expert probabilities. Source masks gate unavailable experts to a neutral
     probability instead of treating missing observations as benign evidence.
 
-    The final risk is additionally gated by semantic evidence: known recovery
-    windows and recently observed NRF endpoint transitions are not treated as
-    attack evidence unless an invalid/untrusted notification or a persistent,
-    unexplained state divergence remains.
+    The final risk is gated by provenance-normalized semantic evidence.  The
+    gate suppresses transient single-observer skew using source-consensus
+    persistence, but unlike the original PA-TEF it does not multiply risk by
+    observation coverage.  This prevents partial telemetry from making a
+    calibrated threshold mathematically unreachable.
     """
 
     requires_full_frame = True
     is_probability_score = False
 
-    def __init__(self, random_state: int = 0, stack_folds: int = 4) -> None:
+    def __init__(
+        self,
+        random_state: int = 0,
+        stack_folds: int = 4,
+        *,
+        use_decision_gate: bool = True,
+        include_consensus_meta: bool = True,
+        gate_single_source_steps: int = PA_TEF_SINGLE_SOURCE_PERSISTENCE_STEPS,
+        gate_dual_source_steps: int = PA_TEF_DUAL_SOURCE_PERSISTENCE_STEPS,
+    ) -> None:
         self.random_state = random_state
         self.stack_folds = stack_folds
+        self.use_decision_gate = use_decision_gate
+        self.include_consensus_meta = include_consensus_meta
+        self.gate_single_source_steps = gate_single_source_steps
+        self.gate_dual_source_steps = gate_dual_source_steps
+        self.meta_features = (
+            META_FEATURES
+            if include_consensus_meta
+            else tuple(
+                feature
+                for feature in META_FEATURES
+                if feature != "consensus_support"
+            )
+        )
         self.experts: dict[str, Pipeline] = {}
         self.fusion: LogisticRegression | None = None
         self.calibrator: LogisticRegression | None = None
@@ -264,6 +344,9 @@ class ProvenanceAwareTemporalEvidenceFusion:
                 "unexplained_conflict": x["unexplained_conflict"]
                 .fillna(0.0)
                 .astype(float),
+                "consensus_support": consensus_attack_support(x)
+                .fillna(0.0)
+                .astype(float),
             },
             index=x.index,
         )
@@ -289,7 +372,7 @@ class ProvenanceAwareTemporalEvidenceFusion:
         frame = self._ensure_temporal(x)
         expert = self._expert_probabilities(frame, models=models)
         meta = pd.concat([expert, self._availability(frame)], axis=1)
-        return meta[list(META_FEATURES)].astype(float)
+        return meta[list(self.meta_features)].astype(float)
 
     def fit(
         self, x: pd.DataFrame, y: pd.Series
@@ -304,7 +387,7 @@ class ProvenanceAwareTemporalEvidenceFusion:
 
         folds = min(self.stack_folds, len(unique_groups))
         splitter = GroupKFold(n_splits=folds)
-        oof = pd.DataFrame(index=frame.index, columns=META_FEATURES, dtype=float)
+        oof = pd.DataFrame(index=frame.index, columns=self.meta_features, dtype=float)
 
         for fold, (train_idx, valid_idx) in enumerate(
             splitter.split(frame, target, groups=groups)
@@ -316,7 +399,7 @@ class ProvenanceAwareTemporalEvidenceFusion:
                 fold_models[name] = model
 
             fold_meta = self._meta_frame(frame.iloc[valid_idx], models=fold_models)
-            oof.loc[fold_meta.index, list(META_FEATURES)] = fold_meta.to_numpy()
+            oof.loc[fold_meta.index, list(self.meta_features)] = fold_meta.to_numpy()
 
         self.fusion = LogisticRegression(
             max_iter=1000,
@@ -359,17 +442,39 @@ class ProvenanceAwareTemporalEvidenceFusion:
             return raw
         return self.calibrator.predict_proba(_logit(raw).reshape(-1, 1))[:, 1]
 
+    def learned_scores(self, x: pd.DataFrame) -> np.ndarray:
+        """Return calibrated learned-fusion scores before semantic gating."""
+        return self._calibrated_scores(x)
+
     def score_samples(self, x: pd.DataFrame) -> np.ndarray:
         frame = self._ensure_temporal(x)
         calibrated = self._calibrated_scores(frame)
-        support = semantic_attack_support(frame).to_numpy()
-        return calibrated * support
+        if not self.use_decision_gate:
+            return calibrated
+
+        gate = provenance_normalized_attack_gate(
+            frame,
+            single_source_steps=self.gate_single_source_steps,
+            dual_source_steps=self.gate_dual_source_steps,
+        ).to_numpy(dtype=float)
+
+        # Gate-off rows are semantically ineligible, but assigning zero would
+        # make the low-FPR threshold collapse to the smallest positive float
+        # and remove the learned fusion from the decision. A neutral score
+        # preserves a meaningful threshold: an alert requires both semantic
+        # eligibility and calibrated learned evidence above the neutral prior.
+        return np.where(gate > 0.0, calibrated, PA_TEF_NEUTRAL_SCORE)
 
     def risk_report(self, x: pd.DataFrame) -> pd.DataFrame:
         frame = self._ensure_temporal(x)
         expert = self._expert_probabilities(frame)
         availability = self._availability(frame)
         support = semantic_attack_support(frame)
+        gate = provenance_normalized_attack_gate(
+            frame,
+            single_source_steps=self.gate_single_source_steps,
+            dual_source_steps=self.gate_dual_source_steps,
+        )
         risk = self.score_samples(frame)
 
         confidence = (
@@ -404,6 +509,7 @@ class ProvenanceAwareTemporalEvidenceFusion:
         report["risk_score"] = risk
         report["confidence"] = confidence.to_numpy()
         report["semantic_support"] = support.to_numpy()
+        report["decision_gate"] = gate.to_numpy()
         report["dominant_evidence"] = evidence
         for column in expert.columns:
             report[column] = expert[column].to_numpy()

@@ -11,12 +11,15 @@ on:
       - research/real-consensus-control
       - research/external-delay-metrics
       - research/promote-consensus-1-8
+      - research/patef-v2-provenance-normalized
+      - research/patef-v2-gate-ablation
     paths:
       - ".github/workflows/open5gs-failover.yml"
       - "lab/open5gs/udm-b.yaml"
       - "scripts/open5gs_failover_lab.py"
       - "scripts/enrich_failover_observations.py"
       - "src/nfnotify_lab/**"
+      - "scripts/patef_v2_real_ablation.py"
 
 permissions:
   contents: read
@@ -105,12 +108,18 @@ jobs:
           nfnotify-lab ingest             --observations "$LAB_DIR/observations.csv"             --out "$LAB_DIR/real"
           nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/real"             --detector semantic_guard
           nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/real"             --detector consensus_guard
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/real"             --detector patef_gate_only
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/real"             --detector patef_learned_only
           nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/real"             --detector patef
 
           nfnotify-lab ingest             --observations "$LAB_DIR/counterfactual-observations.csv"             --out "$LAB_DIR/counterfactual"
           nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"             --detector semantic_guard
           nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"             --detector consensus_guard
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"             --detector patef_gate_only
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"             --detector patef_learned_only
           nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"             --detector patef
+
+          python scripts/patef_v2_real_ablation.py --root "$LAB_DIR"
 
       - name: Validate real A-B-A evidence and report detector transfer
         run: |

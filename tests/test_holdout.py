@@ -24,6 +24,8 @@ def test_scenario_holdout_never_trains_on_heldout_scenario():
         "consensus_guard",
         "isolation_forest",
         "provenance_aware",
+        "patef_gate_only",
+        "patef_learned_only",
         "patef",
     }
     assert set(holdout["heldout_scenario"]) == {

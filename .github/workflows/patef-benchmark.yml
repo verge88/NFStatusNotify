@@ -13,6 +13,8 @@ on:
       - research/calibration-transfer-diagnostics
       - research/source-consensus-guard
       - research/promote-consensus-1-8
+      - research/patef-v2-provenance-normalized
+      - research/patef-v2-gate-ablation
     paths:
       - ".github/workflows/patef-benchmark.yml"
       - "src/nfnotify_lab/**"
@@ -21,6 +23,7 @@ on:
       - "tests/test_hard_scenarios.py"
       - "tests/test_diagnostics.py"
       - "tests/test_consensus.py"
+      - "scripts/patef_v2_ablation_report.py"
       - "configs/patef-benchmark.yaml"
       - "pyproject.toml"
 
@@ -42,6 +45,10 @@ jobs:
           nfnotify-lab all \
             --config configs/patef-benchmark.yaml \
             --out artifacts/patef-benchmark
+      - name: Report PA-TEF v2 gate/learning ablation
+        run: |
+          python scripts/patef_v2_ablation_report.py             --root artifacts/patef-benchmark
+
       - name: Summarize PA-TEF
         run: |
           python - <<'PY'

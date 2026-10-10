@@ -13,6 +13,8 @@ def test_end_to_end_smoke():
         "consensus_guard",
         "isolation_forest",
         "provenance_aware",
+        "patef_gate_only",
+        "patef_learned_only",
         "patef",
     }
     assert result["fpr"].notna().all()

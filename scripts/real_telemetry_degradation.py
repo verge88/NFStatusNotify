@@ -19,7 +19,13 @@ from nfnotify_lab.telemetry_degradation import (
 )
 
 
-DETECTORS = ("semantic_guard", "consensus_guard", "patef")
+DETECTORS = (
+    "semantic_guard",
+    "consensus_guard",
+    "patef_gate_only",
+    "patef_learned_only",
+    "patef",
+)
 
 
 def fit_detectors(

@@ -11,7 +11,11 @@ from sklearn.preprocessing import StandardScaler
 
 from .consensus import consensus_attack_support
 from .features import MODEL_FEATURES, model_matrix
-from .patef import ProvenanceAwareTemporalEvidenceFusion, semantic_attack_support
+from .patef import (
+    ProvenanceAwareTemporalEvidenceFusion,
+    provenance_normalized_attack_gate,
+    semantic_attack_support,
+)
 
 
 @dataclass
@@ -123,6 +127,19 @@ class SemanticGuardDetector:
 
 
 @dataclass
+class PatefGateOnlyDetector:
+    """Deterministic PA-TEF v2 decision gate without learned fusion."""
+
+    def fit(
+        self, x: pd.DataFrame, y: pd.Series | None = None
+    ) -> PatefGateOnlyDetector:
+        return self
+
+    def score_samples(self, x: pd.DataFrame) -> np.ndarray:
+        return provenance_normalized_attack_gate(x).to_numpy(dtype=float)
+
+
+@dataclass
 class ConsensusGuardDetector:
     """Deterministic source-consensus and persistence baseline."""
 
@@ -142,6 +159,8 @@ def detector_names() -> tuple[str, ...]:
         "consensus_guard",
         "isolation_forest",
         "provenance_aware",
+        "patef_gate_only",
+        "patef_learned_only",
         "patef",
     )
 
@@ -157,6 +176,14 @@ def build_detector(name: str, random_state: int = 0):
         return IsolationForestDetector(random_state=random_state)
     if name == "provenance_aware":
         return ProvenanceAwareDetector(random_state=random_state)
+    if name == "patef_gate_only":
+        return PatefGateOnlyDetector()
+    if name == "patef_learned_only":
+        return ProvenanceAwareTemporalEvidenceFusion(
+            random_state=random_state,
+            use_decision_gate=False,
+            include_consensus_meta=False,
+        )
     if name == "patef":
         return ProvenanceAwareTemporalEvidenceFusion(random_state=random_state)
     raise ValueError(f"unknown detector: {name}; features={MODEL_FEATURES}")
