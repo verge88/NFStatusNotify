@@ -9,6 +9,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+from .consensus import consensus_attack_support
 from .features import MODEL_FEATURES, model_matrix
 from .patef import ProvenanceAwareTemporalEvidenceFusion, semantic_attack_support
 
@@ -121,8 +122,28 @@ class SemanticGuardDetector:
         return semantic_attack_support(x).to_numpy(dtype=float)
 
 
+@dataclass
+class ConsensusGuardDetector:
+    """Deterministic source-consensus and persistence baseline."""
+
+    def fit(
+        self, x: pd.DataFrame, y: pd.Series | None = None
+    ) -> ConsensusGuardDetector:
+        return self
+
+    def score_samples(self, x: pd.DataFrame) -> np.ndarray:
+        return consensus_attack_support(x).to_numpy(dtype=float)
+
+
 def detector_names() -> tuple[str, ...]:
-    return ("rules", "semantic_guard", "isolation_forest", "provenance_aware", "patef")
+    return (
+        "rules",
+        "semantic_guard",
+        "consensus_guard",
+        "isolation_forest",
+        "provenance_aware",
+        "patef",
+    )
 
 
 def build_detector(name: str, random_state: int = 0):
@@ -130,6 +151,8 @@ def build_detector(name: str, random_state: int = 0):
         return RuleDetector()
     if name == "semantic_guard":
         return SemanticGuardDetector()
+    if name == "consensus_guard":
+        return ConsensusGuardDetector()
     if name == "isolation_forest":
         return IsolationForestDetector(random_state=random_state)
     if name == "provenance_aware":

@@ -11,6 +11,7 @@ on:
       - research/leak-free-ablations
       - research/hard-generalization-scenarios
       - research/calibration-transfer-diagnostics
+      - research/source-consensus-guard
     paths:
       - ".github/workflows/patef-benchmark.yml"
       - "src/nfnotify_lab/**"
@@ -18,6 +19,7 @@ on:
       - "tests/test_smoke.py"
       - "tests/test_hard_scenarios.py"
       - "tests/test_diagnostics.py"
+      - "tests/test_consensus.py"
       - "configs/patef-benchmark.yaml"
       - "pyproject.toml"
 
@@ -62,6 +64,12 @@ jobs:
           semantic_holdout = holdout.loc[
               holdout["detector"] == "semantic_guard"
           ].iloc[0]
+          consensus = metrics.loc[
+              metrics["detector"] == "consensus_guard"
+          ].iloc[0]
+          consensus_holdout = holdout.loc[
+              holdout["detector"] == "consensus_guard"
+          ].iloc[0]
           rules = metrics.loc[metrics["detector"] == "rules"].iloc[0]
 
           assert patef["fpr"] <= 0.005, patef.to_dict()
@@ -94,6 +102,9 @@ jobs:
           ].iloc[0]
           patef_cal = calibration.loc[
               calibration["detector"] == "patef"
+          ].iloc[0]
+          consensus_cal = calibration.loc[
+              calibration["detector"] == "consensus_guard"
           ].iloc[0]
           patef_risk = risk_register.loc[
               (risk_register["detector"] == "patef")
@@ -146,6 +157,19 @@ jobs:
                   scenario_recall > semantic_scenario_recall
                   and scenario_fpr <= target_fpr
               ),
+              "consensus_guard_unseen_scenario_fpr": float(
+                  consensus_holdout["unseen_scenario_fpr"]
+              ),
+              "consensus_guard_unseen_attack_recall": float(
+                  consensus_holdout["unseen_attack_recall"]
+              ),
+              "consensus_guard_meets_target_fpr": bool(
+                  consensus_holdout["unseen_scenario_fpr"] <= target_fpr
+              ),
+              "patef_recall_gain_vs_consensus_guard": float(
+                  patef_holdout["unseen_attack_recall"]
+                  - consensus_holdout["unseen_attack_recall"]
+              ),
           }
           (root / "hypothesis-check.json").write_text(
               json.dumps(hypothesis, indent=2), encoding="utf-8"
@@ -166,6 +190,19 @@ jobs:
                       semantic_cal["threshold_above_benign_max"]
                   ),
                   "top_max_score_tie_scenarios": top_semantic_ties,
+              },
+              "consensus_guard_calibration": {
+                  "threshold": float(consensus_cal["calibration_threshold"]),
+                  "benign_max_score": float(consensus_cal["benign_max_score"]),
+                  "max_score_tie_count": int(
+                      consensus_cal["max_score_tie_count"]
+                  ),
+                  "max_score_tie_rate": float(
+                      consensus_cal["max_score_tie_rate"]
+                  ),
+                  "threshold_above_benign_max": bool(
+                      consensus_cal["threshold_above_benign_max"]
+                  ),
               },
               "patef_calibration": {
                   "threshold": float(patef_cal["calibration_threshold"]),
@@ -192,6 +229,11 @@ jobs:
                   "- Semantic-guard Recall@target-FPR: "
                   f"{semantic['recall_at_target_fpr']:.6f}"
               ),
+              f"- Consensus-guard test FPR: {consensus['fpr']:.6f}",
+              (
+                  "- Consensus-guard Recall@target-FPR: "
+                  f"{consensus['recall_at_target_fpr']:.6f}"
+              ),
               "",
               "### Scenario-disjoint holdout",
               f"- held-out scenarios: {int(patef_holdout['heldout_scenarios'])}",
@@ -210,6 +252,14 @@ jobs:
               (
                   "- semantic-guard pooled unseen-attack recall: "
                   f"{semantic_holdout['unseen_attack_recall']:.6f}"
+              ),
+              (
+                  "- consensus-guard pooled unseen-scenario FPR: "
+                  f"{consensus_holdout['unseen_scenario_fpr']:.6f}"
+              ),
+              (
+                  "- consensus-guard pooled unseen-attack recall: "
+                  f"{consensus_holdout['unseen_attack_recall']:.6f}"
               ),
               "",
               "### ML contribution check",
@@ -232,6 +282,14 @@ jobs:
               (
                   "- strict dominance vs semantic guard: "
                   f"{hypothesis['scenario_disjoint_strict_dominance_observed']}"
+              ),
+              (
+                  "- consensus guard meets target FPR: "
+                  f"{hypothesis['consensus_guard_meets_target_fpr']}"
+              ),
+              (
+                  "- PA-TEF recall gain vs consensus guard: "
+                  f"{hypothesis['patef_recall_gain_vs_consensus_guard']:.6f}"
               ),
               "",
               "### Calibration / transfer diagnostics",

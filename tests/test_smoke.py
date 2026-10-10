@@ -10,6 +10,7 @@ def test_end_to_end_smoke():
     assert set(result["detector"]) == {
         "rules",
         "semantic_guard",
+        "consensus_guard",
         "isolation_forest",
         "provenance_aware",
         "patef",

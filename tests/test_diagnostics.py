@@ -21,6 +21,7 @@ def test_calibration_diagnostics_account_for_max_score_ties():
     assert set(summary["detector"]) == {
         "rules",
         "semantic_guard",
+        "consensus_guard",
         "isolation_forest",
         "provenance_aware",
         "patef",
