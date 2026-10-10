@@ -196,9 +196,37 @@ def sample_phase(
     recovery_active: int,
     update_first: int,
     replicate_id: int,
+    observer_polls: list[dict[str, Any]],
 ) -> None:
     for index in range(count):
+        # Read-only, real NRF discovery: capture the *availability interval*,
+        # not a fabricated event-time that claims when registration happened.
+        poll_start = time.time()
+        observed_udms: list[str] = []
+        poll_error: str | None = None
+        try:
+            observed_udms = sorted(registered_endpoints())
+        except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
+            poll_error = type(exc).__name__
+        poll_end = time.time()
         epoch, code = auth_probe(f"{phase}-{index}", out)
+        probe_end = time.time()
+        observer_polls.append(
+            {
+                "run_id": f"real-legit-failover-{replicate_id}",
+                "t": len(rows),
+                "phase": phase,
+                "expected_endpoint": endpoint,
+                "registered_udm_endpoints": observed_udms,
+                "poll_start_epoch": poll_start,
+                "poll_end_epoch": poll_end,
+                "probe_start_epoch": epoch,
+                "probe_end_epoch": probe_end,
+                "poll_error": poll_error,
+                "origin_clock": "GitHub runner host wall clock / read-only NRF HTTP2",
+                "provenance_attested": False,
+            }
+        )
         rows.append(
             {
                 "run_id": f"real-legit-failover-{replicate_id}",
@@ -245,8 +273,9 @@ def experiment(out: Path) -> None:
     udm_a_instance_id = instance_id_for_endpoint(udm_a)
 
     rows: list[dict[str, Any]] = []
+    observer_polls: list[dict[str, Any]] = []
     phase_epochs: dict[str, float] = {"baseline_start": time.time()}
-    sample_phase(rows, "baseline", udm_a, 3, out, 0, 0, replicate_id)
+    sample_phase(rows, "baseline", udm_a, 3, out, 0, 0, replicate_id, observer_polls)
 
     run(
         [
@@ -273,17 +302,20 @@ def experiment(out: Path) -> None:
     run(["docker", "stop", "-t", "8", "udm"])
     wait_endpoint(udm_a, False)
     phase_epochs["failover_start"] = time.time()
-    sample_phase(rows, "failover", udm_b, 5, out, 1, 1, replicate_id)
+    sample_phase(rows, "failover", udm_b, 5, out, 1, 1, replicate_id, observer_polls)
 
     run(["docker", "start", "udm"])
     wait_endpoint(udm_a, True)
     run(["docker", "stop", "-t", "8", "udm-b"])
     wait_endpoint(udm_b, False)
     phase_epochs["recovery_start"] = time.time()
-    sample_phase(rows, "recovery", udm_a, 3, out, 1, 1, replicate_id)
+    sample_phase(rows, "recovery", udm_a, 3, out, 1, 1, replicate_id, observer_polls)
     phase_epochs["experiment_end"] = time.time()
 
     write_rows(out / "observations-raw.csv", rows)
+    with (out / "nrf-observer-polls.jsonl").open("w", encoding="utf-8") as fh:
+        for record in observer_polls:
+            fh.write(json.dumps(record, sort_keys=True) + "\n")
     meta = {
         "replicate_id": replicate_id,
         "nrf_ip": docker_ip("nrf"),
