@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import pandas as pd
+import runpy
+from pathlib import Path
 
 from nfnotify_lab.simulator import Scenario, simulate_dataset
-from scripts.source_shift_preregistered import VIEWS, decide, stress_observations
+_script = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts" / "source_shift_preregistered.py"))
+VIEWS = _script["VIEWS"]
+decide = _script["decide"]
+stress_observations = _script["stress_observations"]
 
 
 def _raw():
