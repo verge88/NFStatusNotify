@@ -93,10 +93,12 @@ event и mask-поля выбранного источника, после че�
 
 ## Внешние Open5GS controls
 
-Реальные benign/recovery traces и контрфактический replay оцениваются двумя
+Реальные benign/recovery traces и контрфактический replay оцениваются тремя
 детекторами на одном и том же входе и synthetic calibration:
 
-- `semantic_guard` — обязательный deterministic comparator;
+- `semantic_guard` — исходный deterministic semantic comparator;
+- `consensus_guard` — source-consensus comparator, который на synthetic
+  hard-generalization benchmark удерживает target FPR;
 - `patef` — learned comparator.
 
 Workflow success означает, что реальная A→B→A лаборатория и её evidence
@@ -111,11 +113,13 @@ CI.
 отрицательный detector-result остаётся видимым в artifact, но не маскируется
 как инфраструктурная ошибка.
 
-На текущем 12-сценарном hard-generalization benchmark ни один из двух методов
-не удовлетворяет всем требованиям deployable candidate: `semantic_guard`
-теряет attack recall при строгом low-FPR threshold, а PA-TEF улучшает recall,
-но scenario-disjoint FPR остаётся выше целевых 0,1%. Поэтому external controls
-не должны заранее назначать один из них production-кандидатом.
+На текущем 12-сценарном hard-generalization benchmark `consensus_guard`
+даёт pooled scenario-disjoint Recall 0.914 при FPR 0 и worst-scenario FPR 0.
+PA-TEF имеет более высокий Recall 0.94497, но pooled unseen FPR 0.009938,
+что выше целевых 0.001. `semantic_guard` при строгом low-FPR threshold
+теряет recall полностью. Поэтому `consensus_guard` является текущим
+constrained baseline-кандидатом, но его статус должен подтверждаться real
+Open5GS controls, а не только synthetic matrix.
 
 ## Source-consensus hypothesis
 
@@ -138,6 +142,11 @@ persistent single-source divergence.
 
 Этот baseline не заменяет `semantic_guard`; оба сохраняются, чтобы можно было
 отделить выигрыш от source-consensus semantics от learned fusion.
+
+Real Open5GS scoring сохраняет detector-specific summaries для всех трёх
+методов. Для failover counterfactual workflow сообщает recall/FPR и
+`meets_external_target` отдельно; counterfactual result остаётся research
+measurement и не превращается в инфраструктурный pass/fail.
 
 ## Calibration / transfer diagnostics
 

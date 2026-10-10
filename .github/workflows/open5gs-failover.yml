@@ -8,6 +8,7 @@ on:
       - experiment/open5gs-instrumented-effect
       - research/scenario-disjoint-evaluation
       - research/external-control-candidate
+      - lab/consensus-external-control
     paths:
       - ".github/workflows/open5gs-failover.yml"
       - "lab/open5gs/udm-b.yaml"
@@ -101,10 +102,12 @@ jobs:
 
           nfnotify-lab ingest             --observations "$LAB_DIR/observations.csv"             --out "$LAB_DIR/real"
           nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/real"             --detector semantic_guard
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/real"             --detector consensus_guard
           nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/real"             --detector patef
 
           nfnotify-lab ingest             --observations "$LAB_DIR/counterfactual-observations.csv"             --out "$LAB_DIR/counterfactual"
           nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"             --detector semantic_guard
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"             --detector consensus_guard
           nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"             --detector patef
 
       - name: Validate real A-B-A evidence and report detector transfer
@@ -120,6 +123,9 @@ jobs:
           semantic_real = json.loads(
               (root / "real" / "control-summary-semantic_guard.json").read_text()
           )
+          consensus_real = json.loads(
+              (root / "real" / "control-summary-consensus_guard.json").read_text()
+          )
           patef_real = json.loads(
               (root / "real" / "control-summary-patef.json").read_text()
           )
@@ -127,6 +133,9 @@ jobs:
           counter_obs = pd.read_csv(root / "counterfactual-observations.csv")
           semantic_scores = pd.read_csv(
               root / "counterfactual" / "control-scores-semantic_guard.csv"
+          )
+          consensus_scores = pd.read_csv(
+              root / "counterfactual" / "control-scores-consensus_guard.csv"
           )
           patef_scores = pd.read_csv(
               root / "counterfactual" / "control-scores-patef.csv"
@@ -136,6 +145,13 @@ jobs:
                   root
                   / "counterfactual"
                   / "control-summary-semantic_guard.json"
+              ).read_text()
+          )
+          consensus_counter = json.loads(
+              (
+                  root
+                  / "counterfactual"
+                  / "control-summary-consensus_guard.json"
               ).read_text()
           )
           patef_counter = json.loads(
@@ -156,6 +172,7 @@ jobs:
 
           # Gating assertions are about the validity of the real benign lab.
           assert semantic_real["alerts"] == 0, semantic_real
+          assert consensus_real["alerts"] == 0, consensus_real
           assert patef_real["alerts"] == 0, patef_real
 
           attack = counter_obs["attack_active"].astype(bool).to_numpy()
@@ -187,10 +204,14 @@ jobs:
               "semantic_guard": summarize(
                   "semantic_guard", semantic_scores, semantic_counter
               ),
+              "consensus_guard": summarize(
+                  "consensus_guard", consensus_scores, consensus_counter
+              ),
               "patef": summarize("patef", patef_scores, patef_counter),
           }
           result["any_detector_meets_external_target"] = bool(
               result["semantic_guard"]["meets_external_target"]
+              or result["consensus_guard"]["meets_external_target"]
               or result["patef"]["meets_external_target"]
           )
           (root / "counterfactual-result.json").write_text(
@@ -199,6 +220,7 @@ jobs:
 
           print(json.dumps(evidence, indent=2))
           print(json.dumps(semantic_real, indent=2))
+          print(json.dumps(consensus_real, indent=2))
           print(json.dumps(patef_real, indent=2))
           print(json.dumps(result, indent=2))
           PY

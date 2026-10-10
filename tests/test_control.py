@@ -27,3 +27,23 @@ def test_semantic_guard_external_control_writes_detector_specific_artifacts(tmp_
     written = json.loads(summary_path.read_text())
     assert written["detector"] == "semantic_guard"
     assert not (tmp_path / "control-summary.json").exists()
+
+
+def test_consensus_guard_external_control_scores_benign_trace(tmp_path):
+    raw = simulate_run(DEFAULT_SCENARIOS[0], seed=1, steps=20)
+    features = build_features(raw)
+
+    summary = score_benign_control(
+        features,
+        out_dir=tmp_path,
+        target_fpr=0.01,
+        random_state=4,
+        training_seeds=6,
+        steps=30,
+        detector_name="consensus_guard",
+    )
+
+    assert summary["detector"] == "consensus_guard"
+    assert summary["alerts"] == 0
+    assert (tmp_path / "control-scores-consensus_guard.csv").exists()
+    assert (tmp_path / "control-summary-consensus_guard.json").exists()

@@ -11,7 +11,7 @@ from .features import build_features
 from .simulator import DEFAULT_SCENARIOS, simulate_dataset
 
 
-CONTROL_DETECTORS = ("semantic_guard", "patef")
+CONTROL_DETECTORS = ("semantic_guard", "consensus_guard", "patef")
 
 
 def _external_report(detector, control_features: pd.DataFrame) -> pd.DataFrame:

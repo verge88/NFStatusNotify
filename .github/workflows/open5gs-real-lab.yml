@@ -9,6 +9,7 @@ on:
       - research/patef-specialized-detector
       - research/scenario-disjoint-evaluation
       - research/external-control-semantic_guard
+      - lab/consensus-external-control
     paths:
       - ".github/workflows/open5gs-real-lab.yml"
       - "scripts/open5gs_real_lab.py"
@@ -116,6 +117,7 @@ jobs:
           python -m pip install -e .
           nfnotify-lab ingest             --observations "$LAB_DIR/observations.csv"             --out "$LAB_DIR/derived"
           nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/derived"             --detector semantic_guard
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/derived"             --detector consensus_guard
           nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/derived"             --detector patef
 
       - name: Validate real NFStatusNotify evidence
@@ -140,14 +142,23 @@ jobs:
                   / "control-summary-semantic_guard.json"
               ).read_text()
           )
+          consensus_guard = json.loads(
+              (
+                  root
+                  / "derived"
+                  / "control-summary-consensus_guard.json"
+              ).read_text()
+          )
           patef = json.loads(
               (root / "derived" / "control-summary-patef.json").read_text()
           )
           assert semantic_guard["alerts"] == 0, semantic_guard
+          assert consensus_guard["alerts"] == 0, consensus_guard
           assert patef["alerts"] == 0, patef
 
           print(json.dumps(summary, indent=2))
           print(json.dumps(semantic_guard, indent=2))
+          print(json.dumps(consensus_guard, indent=2))
           print(json.dumps(patef, indent=2))
           with open(Path.cwd() / "lab-summary.md", "w", encoding="utf-8") as f:
               f.write("## Open5GS real lab\n\n")
@@ -160,6 +171,10 @@ jobs:
               f.write(
                   "- semantic_guard benign-control alerts: "
                   f"{semantic_guard['alerts']}\n"
+              )
+              f.write(
+                  "- consensus_guard benign-control alerts: "
+                  f"{consensus_guard['alerts']}\n"
               )
               f.write(
                   "- PA-TEF benign-control alerts: "
