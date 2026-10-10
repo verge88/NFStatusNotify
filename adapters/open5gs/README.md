@@ -29,3 +29,43 @@ forged `NFStatusNotify`.
 
 Важно: `attack_start` не должен попадать в feature pipeline как признак.
 Он используется только для оценки задержки обнаружения.
+
+
+## Реально наблюдаемые времена источников (stage 5, experimental)
+
+В штатной лаборатории `scripts/open5gs_failover_lab.py` каждый auth-probe
+сопровождается **отдельным read-only NRF discovery**. Записывается
+`nrf-observer-polls.jsonl` с ключом `(run_id,t)` и полями:
+
+- `registered_udm_endpoints`, `expected_endpoint`, `poll_error` — реальный ответ
+  NRF и отдельно контрольное ожидаемое состояние;
+- `poll_start_epoch`, `poll_end_epoch` — границы получения NRF ответа;
+- `probe_start_epoch`, `probe_end_epoch` — границы самостоятельного AUSF auth probe;
+- `provenance_attested=false` — криптографически доверенных source-origin
+  timestamps нет.
+
+Отдельная команда `scripts/real_source_provenance_audit.py` формирует
+`real-provenance-audit/source-time-audit.csv` и
+`real-provenance-audit/source-time-decision.json`: сопоставляет
+NRF-поллы, прошедшие AUSF cache setup events с временем журнала, и реальные
+`generate-auth-data` pcap кадры **внутри интервала соответствующего
+probe**. Пакеты из будущего не подтверждают текущую строку.
+
+Важное различие времён:
+
+- `nrf_origin_epoch`: **время завершения чтения NRF**, а не момент, когда
+  UDM впервые был зарегистрирован;
+- `ausf_origin_epoch`: дата **события изменения кэша** из журнала, а не
+  непрерывно подтверждённое время актуальности кэша;
+- `route_origin_epoch`: timestamp **захвата пакета pcap**, а не начало
+  сетевого маршрута;
+- `recovery_active`: разметка действий стенда, **не** доверенное
+  свидетельство recovery внутри живого 5G Core;
+- `notification_subscription_attested=0`: корректный адрес NRF в pcap
+  **не доказывает** подлинность и авторизацию NFStatusNotify.
+
+Исходные CSV для `ingest` и отдельный offline-counterfactual не получают
+новые «доверенные» признаки. В текущем состоянии аудит нельзя применять для
+автоматического блокирования или снятия тревог в реальной сети. Для этого
+необходима отдельно верифицированная source-time телеметрия и проверка
+устойчивости к атакующему, способному влиять на состояние восстановления.
