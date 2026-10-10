@@ -1,0 +1,51 @@
+name: PA-TEF soft-gate development sweep
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/patef-v3-soft-gate
+    paths:
+      - ".github/workflows/patef-soft-gate.yml"
+      - "src/nfnotify_lab/patef.py"
+      - "scripts/patef_soft_gate_sweep.py"
+      - "src/nfnotify_lab/**"
+      - "tests/test_patef.py"
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+
+      - name: Run development-only soft-gate sweep
+        run: |
+          python scripts/patef_soft_gate_sweep.py             --out artifacts/patef-soft-gate             --seeds 60             --steps 90             --target-fpr 0.001             --single 1,2,3,4,5,6,7             --dual 1
+
+      - name: Validate no real-test selection
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          summary = json.loads(
+              Path("artifacts/patef-soft-gate/soft-gate-summary.json").read_text()
+          )
+          assert summary["development_only"] is True, summary
+          assert summary["real_test_used_for_selection"] is False, summary
+          print(json.dumps(summary, indent=2))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: patef-soft-gate-${{ github.run_id }}
+          path: artifacts/patef-soft-gate/
+          retention-days: 30
