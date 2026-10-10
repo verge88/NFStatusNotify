@@ -4,7 +4,9 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - main
       - research/publication-robustness
+      - research/promote-consensus-1-8
     paths:
       - ".github/workflows/open5gs-benign-degradation.yml"
       - "scripts/open5gs_failover_lab.py"

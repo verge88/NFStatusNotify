@@ -3,7 +3,13 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from nfnotify_lab.consensus import consensus_attack_support
+from nfnotify_lab.consensus import (
+    DUAL_SOURCE_PERSISTENCE_STEPS,
+    REFERENCE_DUAL_SOURCE_PERSISTENCE_STEPS,
+    REFERENCE_SINGLE_SOURCE_PERSISTENCE_STEPS,
+    SINGLE_SOURCE_PERSISTENCE_STEPS,
+    consensus_attack_support,
+)
 
 
 def _base_features(rows: int = 12) -> pd.DataFrame:
@@ -21,7 +27,7 @@ def _base_features(rows: int = 12) -> pd.DataFrame:
     )
 
 
-def test_frozen_candidate_is_locked_and_development_selected():
+def test_frozen_candidate_is_locked_and_matches_promoted_default():
     config = yaml.safe_load(Path("configs/consensus-candidate.yaml").read_text())
     assert config["selection"]["locked"] is True
     assert config["selection"]["development_run_id"] == 38058210231
@@ -30,6 +36,11 @@ def test_frozen_candidate_is_locked_and_development_selected():
     assert config["reference"]["dual_source_steps"] == 2
     assert config["candidate"]["single_source_steps"] == 8
     assert config["candidate"]["dual_source_steps"] == 1
+
+    assert REFERENCE_SINGLE_SOURCE_PERSISTENCE_STEPS == 12
+    assert REFERENCE_DUAL_SOURCE_PERSISTENCE_STEPS == 2
+    assert SINGLE_SOURCE_PERSISTENCE_STEPS == 8
+    assert DUAL_SOURCE_PERSISTENCE_STEPS == 1
 
 
 def test_candidate_detects_dual_conflict_one_sample_before_reference():
