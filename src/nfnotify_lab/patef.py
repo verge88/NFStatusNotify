@@ -52,7 +52,11 @@ EXPERT_FEATURES: dict[str, tuple[str, ...]] = {
         "delta_time",
         "cache_changed",
         "since_nrf_update",
+        "since_nrf_endpoint_change",
+        "nrf_endpoint_changed",
         "recent_nrf_update_seen_6",
+        "recent_nrf_update_seen_12",
+        "recent_nrf_endpoint_changed_12",
         "state_conflict_persist",
         "unexplained_conflict",
         "trusted_transition",
@@ -70,6 +74,9 @@ EXPERT_FEATURES: dict[str, tuple[str, ...]] = {
         "recovery_active_mean_3",
         "recovery_active_mean_6",
         "recent_nrf_update_seen_6",
+        "recent_nrf_update_seen_12",
+        "nrf_endpoint_changed",
+        "recent_nrf_endpoint_changed_12",
         "recent_trusted_notify_seen_6",
         "obs_fraction",
         "evidence_coverage",
@@ -87,6 +94,7 @@ META_FEATURES = (
     "avail_context",
     "obs_fraction",
     "recovery_active",
+    "transition_context",
     "state_conflict_persist_norm",
     "recent_bad_notify",
     "unexplained_conflict",
@@ -122,10 +130,15 @@ class ProvenanceAwareTemporalEvidenceFusion:
     PA-TEF trains independent evidence experts and fuses only out-of-fold
     expert probabilities. Source masks gate unavailable experts to a neutral
     probability instead of treating missing observations as benign evidence.
+
+    The final risk is additionally gated by semantic evidence: known recovery
+    windows and recently observed NRF endpoint transitions are not treated as
+    attack evidence unless an invalid/untrusted notification or a persistent,
+    unexplained state divergence remains.
     """
 
     requires_full_frame = True
-    is_probability_score = True
+    is_probability_score = False
 
     def __init__(self, random_state: int = 0, stack_folds: int = 4) -> None:
         self.random_state = random_state
@@ -146,6 +159,15 @@ class ProvenanceAwareTemporalEvidenceFusion:
             [x["prov_nrf_ausf"].fillna(0.0), x["prov_route"].fillna(0.0)],
             axis=1,
         ).max(axis=1)
+        transition_context = pd.concat(
+            [
+                x["recovery_active"].fillna(0.0),
+                x["recent_nrf_update_seen_12"].fillna(0.0),
+                x["recent_nrf_endpoint_changed_12"].fillna(0.0),
+                x["recent_trusted_notify_seen_6"].fillna(0.0),
+            ],
+            axis=1,
+        ).max(axis=1)
         return pd.DataFrame(
             {
                 "avail_state": state.astype(float),
@@ -158,6 +180,7 @@ class ProvenanceAwareTemporalEvidenceFusion:
                 "avail_context": np.ones(len(x), dtype=float),
                 "obs_fraction": x["obs_fraction"].fillna(0.0).astype(float),
                 "recovery_active": x["recovery_active"].fillna(0.0).astype(float),
+                "transition_context": transition_context.astype(float),
                 "state_conflict_persist_norm": x["state_conflict_persist"]
                 .fillna(0.0)
                 .clip(0, 12)
@@ -172,6 +195,37 @@ class ProvenanceAwareTemporalEvidenceFusion:
             },
             index=x.index,
         )
+
+    @staticmethod
+    def _semantic_support(x: pd.DataFrame) -> pd.Series:
+        bad_notify = x["recent_bad_notify_seen_6"].fillna(0.0).clip(0.0, 1.0)
+        recovery = x["recovery_active"].fillna(0.0).clip(0.0, 1.0)
+        observed_transition = pd.concat(
+            [
+                x["recent_nrf_update_seen_12"].fillna(0.0),
+                x["recent_nrf_endpoint_changed_12"].fillna(0.0),
+            ],
+            axis=1,
+        ).max(axis=1)
+        transition_block = np.maximum(recovery, observed_transition)
+        persistence = (
+            (x["state_conflict_persist"].fillna(0.0) - 1.0) / 3.0
+        ).clip(0.0, 1.0)
+        coverage = x["evidence_coverage"].fillna(0.0).clip(0.0, 1.0)
+
+        unexplained = (
+            x["state_conflict"].fillna(0.0) * (1.0 - transition_block)
+        )
+        state_support = unexplained * persistence * coverage
+        temporal_support = (
+            x["delta_time"].fillna(0.0) * (1.0 - transition_block) * coverage
+        )
+
+        support = pd.concat(
+            [bad_notify, state_support, temporal_support],
+            axis=1,
+        ).max(axis=1)
+        return support.clip(0.0, 1.0)
 
     def _expert_probabilities(
         self, x: pd.DataFrame, models: dict[str, Pipeline] | None = None
@@ -258,16 +312,23 @@ class ProvenanceAwareTemporalEvidenceFusion:
         self.calibrator.fit(_logit(raw).reshape(-1, 1), target)
         return self
 
-    def score_samples(self, x: pd.DataFrame) -> np.ndarray:
+    def _calibrated_scores(self, x: pd.DataFrame) -> np.ndarray:
         raw = self._raw_scores(x)
         if self.calibrator is None:
             return raw
         return self.calibrator.predict_proba(_logit(raw).reshape(-1, 1))[:, 1]
 
+    def score_samples(self, x: pd.DataFrame) -> np.ndarray:
+        frame = self._ensure_temporal(x)
+        calibrated = self._calibrated_scores(frame)
+        support = self._semantic_support(frame).to_numpy()
+        return calibrated * support
+
     def risk_report(self, x: pd.DataFrame) -> pd.DataFrame:
         frame = self._ensure_temporal(x)
         expert = self._expert_probabilities(frame)
         availability = self._availability(frame)
+        support = self._semantic_support(frame)
         risk = self.score_samples(frame)
 
         confidence = (
@@ -281,6 +342,13 @@ class ProvenanceAwareTemporalEvidenceFusion:
         for _, row in frame.iterrows():
             if row.get("recent_bad_notify_seen_6", 0.0) > 0:
                 evidence.append("untrusted_or_unbound_nfstatusnotify")
+            elif row.get("recovery_active", 0.0) > 0:
+                evidence.append("legitimate_recovery_context")
+            elif (
+                row.get("recent_nrf_update_seen_12", 0.0) > 0
+                or row.get("recent_nrf_endpoint_changed_12", 0.0) > 0
+            ):
+                evidence.append("legitimate_nrf_transition_context")
             elif (
                 row.get("state_conflict_persist", 0.0) >= 2
                 and row.get("unexplained_conflict", 0.0) > 0
@@ -288,14 +356,13 @@ class ProvenanceAwareTemporalEvidenceFusion:
                 evidence.append("persistent_unexplained_state_divergence")
             elif row.get("delta_time", 0.0) > 0:
                 evidence.append("cache_change_without_recent_nrf_update")
-            elif row.get("recovery_active", 0.0) > 0:
-                evidence.append("legitimate_recovery_context")
             else:
                 evidence.append("weak_or_partial_evidence")
 
         report = pd.DataFrame(index=frame.index)
         report["risk_score"] = risk
         report["confidence"] = confidence.to_numpy()
+        report["semantic_support"] = support.to_numpy()
         report["dominant_evidence"] = evidence
         for column in expert.columns:
             report[column] = expert[column].to_numpy()
