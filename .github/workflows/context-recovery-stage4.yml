@@ -1,0 +1,52 @@
+name: Locked recovery context causal challenge
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/causal-recovery-context-v1
+    paths:
+      - ".github/workflows/context-recovery-stage4.yml"
+      - "src/nfnotify_lab/**"
+      - "scripts/context_recovery_stage4.py"
+      - "tests/test_context_recovery_stage4.py"
+      - "docs/context-recovery-stage4-protocol.md"
+
+permissions:
+  contents: read
+
+jobs:
+  challenge:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install and test causal alignment
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          ruff check src tests
+          python -m pytest -q tests/test_context_recovery_stage4.py
+      - name: Run preregistered unseen-scenario recovery challenge
+        run: |
+          python scripts/context_recovery_stage4.py --out artifacts/recovery-context-stage4
+      - name: Print all precommitted decisions
+        if: always()
+        run: |
+          git rev-parse HEAD
+          python --version
+          if [ -f artifacts/recovery-context-stage4/stage4-summary.csv ]; then
+            cat artifacts/recovery-context-stage4/stage4-summary.csv
+          fi
+          if [ -f artifacts/recovery-context-stage4/stage4-decision.json ]; then
+            cat artifacts/recovery-context-stage4/stage4-decision.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recovery-context-${{ github.run_id }}
+          path: artifacts/recovery-context-stage4/
+          retention-days: 45

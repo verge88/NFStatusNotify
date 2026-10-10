@@ -162,3 +162,85 @@ def aligned_features(source_timed_view: pd.DataFrame) -> pd.DataFrame:
     features["prov_nrf_ausf"] = cache_provenance
     features["prov_route"] = route_provenance
     return add_temporal_features(features)
+
+
+def context_aligned_features(source_timed_view: pd.DataFrame) -> pd.DataFrame:
+    """Causal source-specific context of state evidence (synthetic ORACLE).
+
+    The original source-time alignment compares state at a contemporaneous NRF
+    tick. A delayed route report may still represent a *legitimate transition*
+    occurring at that tick, even when the current global recovery flag is 0.
+    Mark only that source's corroborated historical conflict as explained.
+    Do not mutate other independent conflict sources or notification evidence.
+
+    No label, attack onset, scenario or future capture tick is consulted.
+    This does NOT authenticate any of the supplied telemetry.
+    """
+    original = source_timed_view.sort_values(["run_id", "t"]).reset_index(drop=True)
+    baseline = aligned_features(original)
+    explanatory = build_features(original)
+
+    markers = {
+        "ausf": np.zeros(len(original), dtype=float),
+        "route": np.zeros(len(original), dtype=float),
+    }
+    recovery_markers = {
+        "ausf": np.zeros(len(original), dtype=float),
+        "route": np.zeros(len(original), dtype=float),
+    }
+    transition_markers = {
+        "ausf": np.zeros(len(original), dtype=float),
+        "route": np.zeros(len(original), dtype=float),
+    }
+
+    for _, indices in original.groupby("run_id", sort=False).groups.items():
+        trusted_context: dict[int, tuple[bool, bool]] = {}
+        for idx in indices:
+            obs = original.loc[idx]
+            current_tick = int(obs["t"])
+            origin = obs["nrf_origin_t"]
+            # Context is usable only after its exact NRF snapshot is observed.
+            if (
+                obs["m_nrf"] == 1
+                and pd.notna(origin)
+                and int(origin) == current_tick
+                and pd.notna(obs["nrf_endpoint"])
+            ):
+                historical_recovery = bool(
+                    explanatory.loc[idx, "recovery_active"] > 0
+                )
+                historical_transition = bool(
+                    explanatory.loc[idx, "recent_nrf_update_seen_12"] > 0
+                    or explanatory.loc[idx, "recent_nrf_endpoint_changed_12"] > 0
+                )
+                trusted_context[current_tick] = (
+                    historical_recovery, historical_transition
+                )
+
+            for source, delta in (
+                ("ausf", "delta_nrf_ausf"),
+                ("route", "delta_route"),
+            ):
+                capture = obs[f"{source}_origin_t"]
+                if (
+                    pd.isna(capture)
+                    or int(capture) > current_tick
+                    or int(capture) not in trusted_context
+                    or not pd.notna(baseline.loc[idx, delta])
+                    or baseline.loc[idx, delta] <= 0
+                ):
+                    continue
+                recovery, transition = trusted_context[int(capture)]
+                if recovery or transition:
+                    baseline.loc[idx, delta] = 0.0
+                    markers[source][idx] = 1.0
+                    recovery_markers[source][idx] = float(recovery)
+                    transition_markers[source][idx] = float(transition)
+
+    for source in ("ausf", "route"):
+        baseline[f"eventtime_{source}_explained"] = markers[source]
+        baseline[f"eventtime_{source}_recovery_explained"] = recovery_markers[source]
+        baseline[f"eventtime_{source}_transition_explained"] = transition_markers[
+            source
+        ]
+    return add_temporal_features(baseline)

@@ -15,6 +15,7 @@ on:
       - research/patef-v2-gate-ablation
       - research/source-shift-preregistered
       - research/freshness-eventtime-v1
+      - research/causal-recovery-context-v1
     paths:
       - ".github/workflows/open5gs-failover.yml"
       - "lab/open5gs/udm-b.yaml"
