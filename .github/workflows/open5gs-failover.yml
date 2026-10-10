@@ -1,0 +1,185 @@
+name: Open5GS real UDM failover
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/open5gs-instrumented-effect
+    paths:
+      - ".github/workflows/open5gs-failover.yml"
+      - "lab/open5gs/udm-b.yaml"
+      - "scripts/open5gs_failover_lab.py"
+      - "scripts/enrich_failover_observations.py"
+      - "src/nfnotify_lab/**"
+
+permissions:
+  contents: read
+
+jobs:
+  failover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      OPEN5GS_VERSION: v2.7.7
+      UBUNTU_VERSION: jammy
+      MONGODB_VERSION: "8.0"
+      DOCKER_HOST_IP: 127.0.0.1
+      DOCKER_OPEN5GS_REV: 10295cfecb2f86f88944df1728127853eb4d6a1f
+      LAB_DIR: artifacts/open5gs-failover
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install capture tools
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y tcpdump tshark jq
+
+      - name: Build Open5GS v2.7.7
+        run: |
+          set -euxo pipefail
+          git clone https://github.com/Borjis131/docker-open5gs.git /tmp/docker-open5gs
+          git -C /tmp/docker-open5gs checkout "$DOCKER_OPEN5GS_REV"
+
+          docker build             --build-arg OPEN5GS_VERSION="$OPEN5GS_VERSION"             --build-arg UBUNTU_VERSION="$UBUNTU_VERSION"             -t "base-open5gs:$OPEN5GS_VERSION"             /tmp/docker-open5gs/images/base-open5gs
+
+          for nf in nrf ausf udm; do
+            docker build               --build-arg OPEN5GS_VERSION="$OPEN5GS_VERSION"               --build-arg UBUNTU_VERSION="$UBUNTU_VERSION"               -t "$nf:$OPEN5GS_VERSION"               "/tmp/docker-open5gs/images/$nf"
+          done
+
+      - name: Start NRF AUSF and UDM-A
+        run: |
+          cd /tmp/docker-open5gs
+          docker compose -f compose-files/basic/docker-compose.yaml             up -d --no-build nrf ausf udm
+          docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+
+      - name: Start SBI packet capture
+        run: |
+          mkdir -p "$LAB_DIR"
+          sudo tcpdump -i br-ogs -s 0 -U -w "$LAB_DIR/sbi.pcap" 'tcp port 80'             > "$LAB_DIR/tcpdump.log" 2>&1 &
+          echo $! > "$LAB_DIR/tcpdump.pid"
+          sleep 1
+
+      - name: Run legitimate A to B failover and recovery
+        run: |
+          set -euxo pipefail
+          python scripts/open5gs_failover_lab.py run --out "$LAB_DIR"
+
+      - name: Decode authentication routes and NRF notifications
+        if: always()
+        run: |
+          set +e
+          if [ -f "$LAB_DIR/tcpdump.pid" ]; then
+            sudo kill "$(cat "$LAB_DIR/tcpdump.pid")" 2>/dev/null
+            sleep 2
+          fi
+
+          if [ -s "$LAB_DIR/sbi.pcap" ]; then
+            tshark -r "$LAB_DIR/sbi.pcap"               -d tcp.port==80,http2               -Y 'http2.headers.path contains "generate-auth-data" && http2.headers.method == "POST"'               -T fields               -e frame.time_epoch -e ip.src -e ip.dst               -e http2.headers.method -e http2.headers.path               -E header=y -E separator=/t -E quote=d               > "$LAB_DIR/routes.tsv"
+
+            tshark -r "$LAB_DIR/sbi.pcap"               -d tcp.port==80,http2               -Y 'http2.headers.path contains "nf-status-notify" && http2.headers.method == "POST"'               -T fields               -e frame.time_epoch -e ip.src -e ip.dst               -e http2.headers.method -e http2.headers.path               -E header=y -E separator=/t -E quote=d               > "$LAB_DIR/notifications.tsv"
+          fi
+
+      - name: Snapshot AUSF cache log
+        run: |
+          mkdir -p "$LAB_DIR/logs"
+          docker cp ausf:/var/log/open5gs/ausf.log "$LAB_DIR/logs/ausf.log"
+          grep 'Setup NF EndPoint(addr)' "$LAB_DIR/logs/ausf.log"             > "$LAB_DIR/cache-evidence.log" || true
+
+      - name: Enrich score and build counterfactual replay
+        run: |
+          set -euxo pipefail
+          python scripts/enrich_failover_observations.py             --raw "$LAB_DIR/observations-raw.csv"             --routes "$LAB_DIR/routes.tsv"             --notifications "$LAB_DIR/notifications.tsv"             --ausf-log "$LAB_DIR/logs/ausf.log"             --meta "$LAB_DIR/failover-meta.json"             --out "$LAB_DIR/observations.csv"             --counterfactual "$LAB_DIR/counterfactual-observations.csv"
+
+          pip install -e .
+
+          nfnotify-lab ingest             --observations "$LAB_DIR/observations.csv"             --out "$LAB_DIR/real"
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/real"
+
+          nfnotify-lab ingest             --observations "$LAB_DIR/counterfactual-observations.csv"             --out "$LAB_DIR/counterfactual"
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"
+
+      - name: Validate real A-B-A evidence
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("artifacts/open5gs-failover")
+          evidence = json.loads((root / "evidence-summary.json").read_text())
+          control = json.loads((root / "real" / "control-summary.json").read_text())
+
+          import pandas as pd
+          counter_obs = pd.read_csv(root / "counterfactual-observations.csv")
+          counter_scores = pd.read_csv(root / "counterfactual" / "control-scores.csv")
+          counter_summary = json.loads(
+              (root / "counterfactual" / "control-summary.json").read_text()
+          )
+
+          a = evidence["udm_a"]
+          b = evidence["udm_b"]
+          assert evidence["baseline_nrf"] == [a], evidence
+          assert evidence["baseline_ausf"] == [a], evidence
+          assert evidence["baseline_route"] == [a], evidence
+          assert evidence["failover_nrf"] == [b], evidence
+          assert evidence["failover_ausf"] == [b], evidence
+          assert evidence["failover_route"] == [b], evidence
+          assert evidence["recovery_nrf"] == [a], evidence
+          assert evidence["recovery_ausf"] == [a], evidence
+          assert evidence["recovery_route"] == [a], evidence
+          assert control["alerts"] == 0, control
+
+          attack = counter_obs["attack_active"].astype(bool).to_numpy()
+          alerts = counter_scores["alert"].astype(bool).to_numpy()
+          attack_alerts = int(alerts[attack].sum())
+          benign_alerts = int(alerts[~attack].sum())
+          recall = float(alerts[attack].mean())
+          fpr = float(alerts[~attack].mean())
+
+          assert attack_alerts >= 1, counter_summary
+          assert benign_alerts == 0, counter_summary
+
+          result = {
+              "attack_samples": int(attack.sum()),
+              "attack_alerts": attack_alerts,
+              "benign_samples": int((~attack).sum()),
+              "benign_alerts": benign_alerts,
+              "recall": recall,
+              "fpr": fpr,
+              "threshold": counter_summary["threshold"],
+              "max_risk": counter_summary["max_risk"],
+          }
+          (root / "counterfactual-result.json").write_text(
+              json.dumps(result, indent=2)
+          )
+
+          print(json.dumps(evidence, indent=2))
+          print(json.dumps(control, indent=2))
+          print(json.dumps(result, indent=2))
+          PY
+
+      - name: Collect Open5GS logs
+        if: always()
+        run: |
+          set +e
+          mkdir -p "$LAB_DIR/logs"
+          for nf in nrf ausf udm udm-b; do
+            docker logs "$nf" > "$LAB_DIR/logs/$nf-docker.log" 2>&1 || true
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: open5gs-failover-${{ github.run_id }}
+          path: artifacts/open5gs-failover/
+          retention-days: 30
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker rm -f udm-b 2>/dev/null || true
+          cd /tmp/docker-open5gs
+          docker compose -f compose-files/basic/docker-compose.yaml down -v || true
