@@ -108,7 +108,11 @@ def main() -> None:
         print(metrics.to_string(index=False))
 
     if args.command in {"ablate", "all"}:
-        ablations = evaluate_ablations(features, target_fpr=target_fpr)
+        ablations = evaluate_ablations(
+            features,
+            target_fpr=target_fpr,
+            random_state=random_state,
+        )
         ablations.to_csv(out_dir / "ablations.csv", index=False)
         print(ablations.to_string(index=False))
 
