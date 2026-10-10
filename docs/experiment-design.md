@@ -113,6 +113,26 @@ CI.
 но scenario-disjoint FPR остаётся выше целевых 0,1%. Поэтому external controls
 не должны заранее назначать один из них production-кандидатом.
 
+## Calibration / transfer diagnostics
+
+Benchmark сохраняет `calibration-diagnostics.csv`,
+`calibration-max-score-ties.csv` и
+`generalization-risk-register.csv`.
+
+Первый отчёт показывает, достижим ли целевой FPR при наблюдаемом calibration
+score distribution. Для дискретных детекторов важен случай, когда большое число
+benign samples связано на максимальном score: тогда корректный threshold может
+оказаться выше максимума, и детектор будет иметь нулевой recall при требуемом
+FPR. Второй отчёт показывает, какие сценарии создают эти max-score ties.
+
+`generalization-risk-register.csv` сортирует scenario-disjoint folds по
+превышению целевого FPR. Это отделяет две разные проблемы: calibration ties на
+известных benign данных и transfer/generalization failures на полностью
+невиденных benign сценариях.
+
+GitHub Actions также пишет `calibration-transfer.json` с компактным
+машиночитаемым summary для semantic guard и PA-TEF.
+
 ## Критерий, при котором ML не оправдан
 
 Если `semantic_guard` при равном или меньшем FPR стабильно имеет не худшие
