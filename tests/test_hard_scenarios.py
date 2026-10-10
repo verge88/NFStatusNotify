@@ -68,3 +68,42 @@ def test_benign_skew_and_persistent_divergence_overlap_semantic_support():
     assert benign_support.max() == 1.0
     assert attack_support.max() == 1.0
     assert (attack_support.iloc[-5:] == 1.0).all()
+
+
+def test_conflict_topology_is_source_symmetric():
+    cache_skew = Scenario(
+        "cache_skew_symmetry",
+        observer_skew_at=5,
+        observer_skew_duration=6,
+        observer_skew_sources=("ausf",),
+    )
+    route_skew = Scenario(
+        "route_skew_symmetry",
+        observer_skew_at=5,
+        observer_skew_duration=6,
+        observer_skew_sources=("route",),
+    )
+    cache_attack = Scenario(
+        "cache_attack_symmetry",
+        attack=True,
+        silent_divergence_at=5,
+        silent_divergence_sources=("ausf",),
+    )
+    route_attack = Scenario(
+        "route_attack_symmetry",
+        attack=True,
+        silent_divergence_at=5,
+        silent_divergence_sources=("route",),
+    )
+
+    cache_skew_f = build_features(simulate_run(cache_skew, seed=0, steps=20))
+    route_skew_f = build_features(simulate_run(route_skew, seed=0, steps=20))
+    cache_attack_f = build_features(simulate_run(cache_attack, seed=0, steps=20))
+    route_attack_f = build_features(simulate_run(route_attack, seed=0, steps=20))
+
+    assert cache_skew_f["single_source_conflict_persist"].max() == 6.0
+    assert route_skew_f["single_source_conflict_persist"].max() == 6.0
+    assert cache_attack_f["single_source_conflict_persist"].iloc[-1] == 15.0
+    assert route_attack_f["single_source_conflict_persist"].iloc[-1] == 15.0
+    assert (cache_attack_f["dual_source_conflict"] == 0.0).all()
+    assert (route_attack_f["dual_source_conflict"] == 0.0).all()
