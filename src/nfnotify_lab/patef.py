@@ -17,9 +17,8 @@ from .temporal import add_temporal_features
 
 EXPERT_FEATURES: dict[str, tuple[str, ...]] = {
     "state": (
-        # Source-symmetric state representation.  Cache-vs-route identity is
-        # deliberately excluded so a held-out skew on one observer can reuse
-        # evidence learned from the other observer.
+        "delta_nrf_ausf",
+        "delta_route",
         "state_conflict",
         "state_conflict_persist",
         "state_pair_available_count",
@@ -31,13 +30,21 @@ EXPERT_FEATURES: dict[str, tuple[str, ...]] = {
         "conflict_source_count_mean_6",
         "single_source_conflict_mean_6",
         "dual_source_conflict_mean_6",
+        "route_conflict_persist",
+        "cache_conflict_persist",
+        "delta_nrf_ausf_mean_3",
+        "delta_nrf_ausf_mean_6",
+        "delta_route_mean_3",
+        "delta_route_mean_6",
         "state_conflict_mean_3",
         "state_conflict_mean_6",
-        "state_conflict_mean_12",
         "state_conflict_max_12",
+        "prov_nrf_ausf",
+        "prov_route",
         "obs_fraction",
-        "evidence_coverage",
         "m_nrf",
+        "m_ausf",
+        "m_route",
     ),
     "notify": (
         "delta_notify",
@@ -124,15 +131,7 @@ def _logit(values: np.ndarray) -> np.ndarray:
 def _expert_model(random_state: int) -> Pipeline:
     return Pipeline(
         [
-            (
-                "imputer",
-                SimpleImputer(
-                    strategy="constant",
-                    fill_value=0.0,
-                    add_indicator=True,
-                    keep_empty_features=True,
-                ),
-            ),
+            ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
             (
                 "model",
                 HistGradientBoostingClassifier(
