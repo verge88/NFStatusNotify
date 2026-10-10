@@ -47,6 +47,10 @@ jobs:
           assert patef["fpr"] <= 0.005, patef.to_dict()
           assert patef["recall_at_target_fpr"] >= 0.90, patef.to_dict()
           assert patef_holdout["heldout_scenarios"] == 7, patef_holdout.to_dict()
+          assert patef_holdout["unseen_scenario_fpr"] <= 0.001, patef_holdout.to_dict()
+          assert patef_holdout["worst_scenario_fpr"] <= 0.001, patef_holdout.to_dict()
+          assert patef_holdout["unseen_attack_recall"] >= 0.90, patef_holdout.to_dict()
+          assert patef_holdout["minimum_attack_scenario_recall"] >= 0.90, patef_holdout.to_dict()
           holdout_detail = pd.read_csv(root / "scenario-holdout.csv")
           patef_detail = holdout_detail.loc[
               holdout_detail["detector"] == "patef",
