@@ -5,11 +5,16 @@ on:
   push:
     branches:
       - lab/open5gs-real-observations
+      - research/patef-specialized-detector
     paths:
       - ".github/workflows/open5gs-real-lab.yml"
       - "scripts/open5gs_real_lab.py"
       - "scripts/enrich_real_notifications.py"
       - "docs/real-open5gs-actions.md"
+      - "docs/patef-detector.md"
+      - "src/nfnotify_lab/**"
+      - "configs/experiment.yaml"
+      - "pyproject.toml"
 
 permissions:
   contents: read
@@ -107,6 +112,7 @@ jobs:
 
           python -m pip install -e .
           nfnotify-lab ingest             --observations "$LAB_DIR/observations.csv"             --out "$LAB_DIR/derived"
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/derived"
 
       - name: Validate real NFStatusNotify evidence
         run: |
@@ -123,12 +129,18 @@ jobs:
           semantic = (root / "semantic-evidence.log").read_text(errors="replace")
           assert "(NRF-notify)" in semantic, semantic
 
+          control = json.loads((root / "derived" / "control-summary.json").read_text())
+          assert control["alerts"] == 0, control
+
           print(json.dumps(summary, indent=2))
+          print(json.dumps(control, indent=2))
           with open(Path.cwd() / "lab-summary.md", "w", encoding="utf-8") as f:
               f.write("## Open5GS real lab\n\n")
               f.write(f"- NFStatusNotify frames: {summary['notification_frames']}\n")
               f.write(f"- Trusted NRF → AUSF frames: {summary['trusted_nrf_to_ausf_frames']}\n")
               f.write("- Scenario: legitimate UDM stop/restart (no forged payload)\n")
+              f.write(f"- PA-TEF benign-control alerts: {control['alerts']}\n")
+              f.write(f"- PA-TEF max benign risk: {control['max_risk']:.6g}\n")
           PY
           cat lab-summary.md >> "$GITHUB_STEP_SUMMARY"
 

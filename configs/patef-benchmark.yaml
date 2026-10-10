@@ -1,5 +1,5 @@
 dataset:
-  seeds: 100
+  seeds: 60
   steps: 90
 
 evaluation:

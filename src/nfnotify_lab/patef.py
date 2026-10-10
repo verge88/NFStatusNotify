@@ -1,0 +1,302 @@
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GroupKFold
+from sklearn.pipeline import Pipeline
+
+from .temporal import add_temporal_features
+
+
+EXPERT_FEATURES: dict[str, tuple[str, ...]] = {
+    "state": (
+        "delta_nrf_ausf",
+        "delta_route",
+        "state_conflict",
+        "state_conflict_persist",
+        "route_conflict_persist",
+        "cache_conflict_persist",
+        "delta_nrf_ausf_mean_3",
+        "delta_nrf_ausf_mean_6",
+        "delta_route_mean_3",
+        "delta_route_mean_6",
+        "state_conflict_mean_3",
+        "state_conflict_mean_6",
+        "state_conflict_max_12",
+        "prov_nrf_ausf",
+        "prov_route",
+        "obs_fraction",
+        "m_nrf",
+        "m_ausf",
+        "m_route",
+    ),
+    "notify": (
+        "delta_notify",
+        "bad_notify_seen",
+        "recent_bad_notify_seen_6",
+        "recent_notify_seen_6",
+        "recent_trusted_notify_seen_6",
+        "notify_seen",
+        "notify_subscription_valid",
+        "notify_sender_trusted",
+        "since_notify",
+        "prov_notify",
+        "m_notify",
+        "delta_notify_mean_3",
+        "delta_notify_max_6",
+    ),
+    "temporal": (
+        "delta_time",
+        "cache_changed",
+        "since_nrf_update",
+        "recent_nrf_update_seen_6",
+        "state_conflict_persist",
+        "unexplained_conflict",
+        "trusted_transition",
+        "delta_time_mean_3",
+        "delta_time_max_6",
+        "recovery_active",
+        "recovery_active_mean_6",
+        "state_conflict_mean_6",
+        "state_conflict_mean_12",
+        "obs_fraction",
+        "evidence_coverage",
+    ),
+    "context": (
+        "recovery_active",
+        "recovery_active_mean_3",
+        "recovery_active_mean_6",
+        "recent_nrf_update_seen_6",
+        "recent_trusted_notify_seen_6",
+        "obs_fraction",
+        "evidence_coverage",
+    ),
+}
+
+META_FEATURES = (
+    "p_state",
+    "p_notify",
+    "p_temporal",
+    "p_context",
+    "avail_state",
+    "avail_notify",
+    "avail_temporal",
+    "avail_context",
+    "obs_fraction",
+    "recovery_active",
+    "state_conflict_persist_norm",
+    "recent_bad_notify",
+    "unexplained_conflict",
+)
+
+
+def _logit(values: np.ndarray) -> np.ndarray:
+    clipped = np.clip(np.asarray(values, dtype=float), 1e-6, 1.0 - 1e-6)
+    return np.log(clipped / (1.0 - clipped))
+
+
+def _expert_model(random_state: int) -> Pipeline:
+    return Pipeline(
+        [
+            ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
+            (
+                "model",
+                HistGradientBoostingClassifier(
+                    learning_rate=0.07,
+                    max_iter=120,
+                    max_leaf_nodes=15,
+                    l2_regularization=1.2,
+                    random_state=random_state,
+                ),
+            ),
+        ]
+    )
+
+
+class ProvenanceAwareTemporalEvidenceFusion:
+    """Specialized NFStatusNotify post-effect detector.
+
+    PA-TEF trains independent evidence experts and fuses only out-of-fold
+    expert probabilities. Source masks gate unavailable experts to a neutral
+    probability instead of treating missing observations as benign evidence.
+    """
+
+    requires_full_frame = True
+    is_probability_score = True
+
+    def __init__(self, random_state: int = 0, stack_folds: int = 4) -> None:
+        self.random_state = random_state
+        self.stack_folds = stack_folds
+        self.experts: dict[str, Pipeline] = {}
+        self.fusion: LogisticRegression | None = None
+        self.calibrator: LogisticRegression | None = None
+
+    @staticmethod
+    def _ensure_temporal(x: pd.DataFrame) -> pd.DataFrame:
+        if "state_conflict_persist" in x.columns:
+            return x.copy()
+        return add_temporal_features(x)
+
+    @staticmethod
+    def _availability(x: pd.DataFrame) -> pd.DataFrame:
+        state = pd.concat(
+            [x["prov_nrf_ausf"].fillna(0.0), x["prov_route"].fillna(0.0)],
+            axis=1,
+        ).max(axis=1)
+        return pd.DataFrame(
+            {
+                "avail_state": state.astype(float),
+                "avail_notify": x["m_notify"].fillna(0.0).astype(float),
+                "avail_temporal": (
+                    x["m_nrf"].fillna(0.0).astype(float)
+                    + x["m_ausf"].fillna(0.0).astype(float)
+                )
+                / 2.0,
+                "avail_context": np.ones(len(x), dtype=float),
+                "obs_fraction": x["obs_fraction"].fillna(0.0).astype(float),
+                "recovery_active": x["recovery_active"].fillna(0.0).astype(float),
+                "state_conflict_persist_norm": x["state_conflict_persist"]
+                .fillna(0.0)
+                .clip(0, 12)
+                .astype(float)
+                / 12.0,
+                "recent_bad_notify": x["recent_bad_notify_seen_6"]
+                .fillna(0.0)
+                .astype(float),
+                "unexplained_conflict": x["unexplained_conflict"]
+                .fillna(0.0)
+                .astype(float),
+            },
+            index=x.index,
+        )
+
+    def _expert_probabilities(
+        self, x: pd.DataFrame, models: dict[str, Pipeline] | None = None
+    ) -> pd.DataFrame:
+        frame = self._ensure_temporal(x)
+        models = models or self.experts
+        availability = self._availability(frame)
+        out = pd.DataFrame(index=frame.index)
+
+        for name, columns in EXPERT_FEATURES.items():
+            probability = models[name].predict_proba(frame[list(columns)])[:, 1]
+            available = availability[f"avail_{name}"].to_numpy()
+            out[f"p_{name}"] = np.where(available > 0.0, probability, 0.5)
+
+        return out
+
+    def _meta_frame(
+        self, x: pd.DataFrame, models: dict[str, Pipeline] | None = None
+    ) -> pd.DataFrame:
+        frame = self._ensure_temporal(x)
+        expert = self._expert_probabilities(frame, models=models)
+        meta = pd.concat([expert, self._availability(frame)], axis=1)
+        return meta[list(META_FEATURES)].astype(float)
+
+    def fit(
+        self, x: pd.DataFrame, y: pd.Series
+    ) -> ProvenanceAwareTemporalEvidenceFusion:
+        frame = self._ensure_temporal(x)
+        target = pd.Series(np.asarray(y, dtype=int), index=frame.index)
+        groups = frame["run_id"].astype(str).to_numpy()
+        unique_groups = np.unique(groups)
+
+        if len(unique_groups) < 2:
+            raise ValueError("PA-TEF requires at least two independent run_id groups")
+
+        folds = min(self.stack_folds, len(unique_groups))
+        splitter = GroupKFold(n_splits=folds)
+        oof = pd.DataFrame(index=frame.index, columns=META_FEATURES, dtype=float)
+
+        for fold, (train_idx, valid_idx) in enumerate(
+            splitter.split(frame, target, groups=groups)
+        ):
+            fold_models: dict[str, Pipeline] = {}
+            for expert_index, (name, columns) in enumerate(EXPERT_FEATURES.items()):
+                model = _expert_model(self.random_state + 10 * fold + expert_index)
+                model.fit(frame.iloc[train_idx][list(columns)], target.iloc[train_idx])
+                fold_models[name] = model
+
+            fold_meta = self._meta_frame(frame.iloc[valid_idx], models=fold_models)
+            oof.loc[fold_meta.index, list(META_FEATURES)] = fold_meta.to_numpy()
+
+        self.fusion = LogisticRegression(
+            max_iter=1000,
+            class_weight="balanced",
+            C=0.7,
+            random_state=self.random_state,
+        )
+        self.fusion.fit(oof.astype(float), target)
+
+        self.experts = {}
+        for expert_index, (name, columns) in enumerate(EXPERT_FEATURES.items()):
+            model = _expert_model(self.random_state + 100 + expert_index)
+            model.fit(frame[list(columns)], target)
+            self.experts[name] = model
+
+        self.calibrator = None
+        return self
+
+    def _raw_scores(self, x: pd.DataFrame) -> np.ndarray:
+        if self.fusion is None or not self.experts:
+            raise RuntimeError("PA-TEF must be fitted before scoring")
+        return self.fusion.predict_proba(self._meta_frame(x))[:, 1]
+
+    def calibrate(
+        self, x: pd.DataFrame, y: pd.Series
+    ) -> ProvenanceAwareTemporalEvidenceFusion:
+        target = np.asarray(y, dtype=int)
+        raw = self._raw_scores(x)
+        if len(np.unique(target)) < 2 or len(np.unique(raw)) < 2:
+            self.calibrator = None
+            return self
+
+        self.calibrator = LogisticRegression(max_iter=500, C=1.0)
+        self.calibrator.fit(_logit(raw).reshape(-1, 1), target)
+        return self
+
+    def score_samples(self, x: pd.DataFrame) -> np.ndarray:
+        raw = self._raw_scores(x)
+        if self.calibrator is None:
+            return raw
+        return self.calibrator.predict_proba(_logit(raw).reshape(-1, 1))[:, 1]
+
+    def risk_report(self, x: pd.DataFrame) -> pd.DataFrame:
+        frame = self._ensure_temporal(x)
+        expert = self._expert_probabilities(frame)
+        availability = self._availability(frame)
+        risk = self.score_samples(frame)
+
+        confidence = (
+            0.40 * availability["avail_state"]
+            + 0.25 * availability["avail_notify"]
+            + 0.20 * availability["avail_temporal"]
+            + 0.15 * availability["obs_fraction"]
+        ).clip(0.0, 1.0)
+
+        evidence: list[str] = []
+        for _, row in frame.iterrows():
+            if row.get("recent_bad_notify_seen_6", 0.0) > 0:
+                evidence.append("untrusted_or_unbound_nfstatusnotify")
+            elif (
+                row.get("state_conflict_persist", 0.0) >= 2
+                and row.get("unexplained_conflict", 0.0) > 0
+            ):
+                evidence.append("persistent_unexplained_state_divergence")
+            elif row.get("delta_time", 0.0) > 0:
+                evidence.append("cache_change_without_recent_nrf_update")
+            elif row.get("recovery_active", 0.0) > 0:
+                evidence.append("legitimate_recovery_context")
+            else:
+                evidence.append("weak_or_partial_evidence")
+
+        report = pd.DataFrame(index=frame.index)
+        report["risk_score"] = risk
+        report["confidence"] = confidence.to_numpy()
+        report["dominant_evidence"] = evidence
+        for column in expert.columns:
+            report[column] = expert[column].to_numpy()
+        return report

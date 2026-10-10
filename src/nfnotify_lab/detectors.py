@@ -10,6 +10,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from .features import MODEL_FEATURES, model_matrix
+from .patef import ProvenanceAwareTemporalEvidenceFusion
 
 
 @dataclass
@@ -20,13 +21,11 @@ class RuleDetector:
         return self
 
     def score_samples(self, x: pd.DataFrame) -> np.ndarray:
-        z = x.copy()
-        d1 = z["delta_nrf_ausf"].fillna(0.0)
-        d2 = z["delta_route"].fillna(0.0)
-        d3 = z["delta_notify"].fillna(0.0)
-        d4 = z["delta_time"].fillna(0.0)
-        # Context reduces severity for transient, known recovery conditions.
-        recovery_discount = 0.75 * z["recovery_active"].fillna(0.0)
+        d1 = x["delta_nrf_ausf"].fillna(0.0)
+        d2 = x["delta_route"].fillna(0.0)
+        d3 = x["delta_notify"].fillna(0.0)
+        d4 = x["delta_time"].fillna(0.0)
+        recovery_discount = 0.75 * x["recovery_active"].fillna(0.0)
         return (d1 + d2 + 1.5 * d3 + 0.75 * d4 - recovery_discount).to_numpy()
 
 
@@ -36,7 +35,15 @@ class IsolationForestDetector:
     def __init__(self, random_state: int = 0) -> None:
         self.pipe = Pipeline(
             [
-                ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
+                (
+                    "imputer",
+                    SimpleImputer(
+                        strategy="constant",
+                        fill_value=0.0,
+                        add_indicator=True,
+                        keep_empty_features=True,
+                    ),
+                ),
                 ("scale", StandardScaler()),
                 (
                     "model",
@@ -51,32 +58,45 @@ class IsolationForestDetector:
         )
 
     def fit(self, x: pd.DataFrame, y: pd.Series) -> IsolationForestDetector:
-        benign = x.loc[y.to_numpy() == 0]
+        matrix = model_matrix(x)
+        benign = matrix.loc[np.asarray(y) == 0]
         self.pipe.fit(benign)
         return self
 
     def score_samples(self, x: pd.DataFrame) -> np.ndarray:
-        # sklearn gives higher values to normal points; invert for anomaly score.
-        return -self.pipe.named_steps["model"].score_samples(
-            self.pipe[:-1].transform(x)
-        )
+        matrix = model_matrix(x)
+        transformed = self.pipe[:-1].transform(matrix)
+        return -self.pipe.named_steps["model"].score_samples(transformed)
 
 
 class ProvenanceAwareDetector:
-    """Research model that explicitly consumes observation masks/provenance.
+    """Single-model provenance-aware baseline."""
 
-    This is a baseline implementation, not a claim of scientific novelty. It is
-    deliberately structured so new provenance-aware objectives or calibration
-    methods can replace the learner without changing the experiment harness.
-    """
+    is_probability_score = True
 
     def __init__(self, random_state: int = 0) -> None:
-        self.model = HistGradientBoostingClassifier(
-            learning_rate=0.06,
-            max_iter=250,
-            max_leaf_nodes=15,
-            l2_regularization=1.0,
-            random_state=random_state,
+        self.model = Pipeline(
+            [
+                (
+                    "imputer",
+                    SimpleImputer(
+                        strategy="constant",
+                        fill_value=0.0,
+                        add_indicator=True,
+                        keep_empty_features=True,
+                    ),
+                ),
+                (
+                    "model",
+                    HistGradientBoostingClassifier(
+                        learning_rate=0.06,
+                        max_iter=250,
+                        max_leaf_nodes=15,
+                        l2_regularization=1.0,
+                        random_state=random_state,
+                    ),
+                ),
+            ]
         )
 
     def fit(self, x: pd.DataFrame, y: pd.Series) -> ProvenanceAwareDetector:
@@ -88,7 +108,7 @@ class ProvenanceAwareDetector:
 
 
 def detector_names() -> tuple[str, ...]:
-    return ("rules", "isolation_forest", "provenance_aware")
+    return ("rules", "isolation_forest", "provenance_aware", "patef")
 
 
 def build_detector(name: str, random_state: int = 0):
@@ -98,4 +118,6 @@ def build_detector(name: str, random_state: int = 0):
         return IsolationForestDetector(random_state=random_state)
     if name == "provenance_aware":
         return ProvenanceAwareDetector(random_state=random_state)
+    if name == "patef":
+        return ProvenanceAwareTemporalEvidenceFusion(random_state=random_state)
     raise ValueError(f"unknown detector: {name}; features={MODEL_FEATURES}")
