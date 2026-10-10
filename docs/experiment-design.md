@@ -92,18 +92,26 @@ event и mask-поля выбранного источника, после че�
 Реальные benign/recovery traces и контрфактический replay оцениваются двумя
 детекторами на одном и том же входе и synthetic calibration:
 
-- `semantic_guard` — текущий deployable candidate и обязательный quality gate;
-- `patef` — исследовательский comparator.
+- `semantic_guard` — обязательный deterministic comparator;
+- `patef` — learned comparator.
 
-Это разделение следует текущему отрицательному ML-result: лаборатория не должна
-становиться красной только потому, что PA-TEF хуже переносит synthetic
-threshold на внешний trace, если детерминированный candidate сохраняет нужное
-поведение. При этом PA-TEF score, threshold и recall остаются в artifacts.
+Workflow success означает, что реальная A→B→A лаборатория и её evidence
+валидны: NRF, AUSF-cache и фактический route дают ожидаемые переходы, а benign
+trace не вызывает alert у сравниваемых детекторов. Контрфактический replay
+используется как **research transfer measurement**, а не как условие зелёного
+CI.
 
-Для реального A→B→A failover candidate должен давать ноль benign alerts, а на
-контрфактическом post-effect — обнаруживать все размеченные attack samples без
-ложных тревог на benign samples. PA-TEF измеряется рядом, но его
-counterfactual recall не используется для прохождения quality gate.
+Для каждого детектора сохраняются threshold, max risk, recall и FPR на
+контрфактическом post-effect, а также флаг `meets_external_target`.
+Это специально отделяет исправность стенда от качества текущего метода:
+отрицательный detector-result остаётся видимым в artifact, но не маскируется
+как инфраструктурная ошибка.
+
+На текущем 12-сценарном hard-generalization benchmark ни один из двух методов
+не удовлетворяет всем требованиям deployable candidate: `semantic_guard`
+теряет attack recall при строгом low-FPR threshold, а PA-TEF улучшает recall,
+но scenario-disjoint FPR остаётся выше целевых 0,1%. Поэтому external controls
+не должны заранее назначать один из них production-кандидатом.
 
 ## Критерий, при котором ML не оправдан
 
