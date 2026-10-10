@@ -4,7 +4,9 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - main
       - research/patef-specialized-detector
+      - research/scenario-disjoint-evaluation
     paths:
       - ".github/workflows/patef-benchmark.yml"
       - "src/nfnotify_lab/**"
@@ -26,7 +28,9 @@ jobs:
       - run: pip install -e .
       - name: Run low-FPR benchmark
         run: |
-          nfnotify-lab all             --config configs/patef-benchmark.yaml             --out artifacts/patef-benchmark
+          nfnotify-lab all \
+            --config configs/patef-benchmark.yaml \
+            --out artifacts/patef-benchmark
       - name: Summarize PA-TEF
         run: |
           python - <<'PY'
@@ -35,28 +39,63 @@ jobs:
 
           root = Path("artifacts/patef-benchmark")
           metrics = pd.read_csv(root / "metrics.csv")
+          holdout = pd.read_csv(root / "scenario-holdout-summary.csv")
           patef = metrics.loc[metrics["detector"] == "patef"].iloc[0]
+          patef_holdout = holdout.loc[holdout["detector"] == "patef"].iloc[0]
           rules = metrics.loc[metrics["detector"] == "rules"].iloc[0]
 
           assert patef["fpr"] <= 0.005, patef.to_dict()
           assert patef["recall_at_target_fpr"] >= 0.90, patef.to_dict()
+          assert patef_holdout["heldout_scenarios"] == 7, patef_holdout.to_dict()
+          assert patef_holdout["unseen_scenario_fpr"] <= 0.001, patef_holdout.to_dict()
+          assert patef_holdout["worst_scenario_fpr"] <= 0.001, patef_holdout.to_dict()
+          assert patef_holdout["unseen_attack_recall"] >= 0.90, patef_holdout.to_dict()
+          assert patef_holdout["minimum_attack_scenario_recall"] >= 0.90, patef_holdout.to_dict()
+          holdout_detail = pd.read_csv(root / "scenario-holdout.csv")
+          patef_detail = holdout_detail.loc[
+              holdout_detail["detector"] == "patef",
+              [
+                  "heldout_scenario",
+                  "threshold",
+                  "fpr",
+                  "recall",
+                  "false_positives",
+                  "benign_samples",
+              ],
+          ]
 
           lines = [
               "## PA-TEF benchmark",
               "",
-              f"- target FPR: 0.1%",
+              "- target FPR: 0.1%",
               f"- PA-TEF test FPR: {patef['fpr']:.6f}",
               f"- PA-TEF Recall@target-FPR: {patef['recall_at_target_fpr']:.6f}",
               f"- PA-TEF PR-AUC: {patef['pr_auc']:.6f}",
               f"- PA-TEF ROC-AUC: {patef['roc_auc']:.6f}",
               f"- PA-TEF median delay: {patef['median_detection_delay']}",
               f"- Rules Recall@target-FPR: {rules['recall_at_target_fpr']:.6f}",
+              "",
+              "### Scenario-disjoint holdout",
+              f"- held-out scenarios: {int(patef_holdout['heldout_scenarios'])}",
+              f"- pooled unseen-scenario FPR: {patef_holdout['unseen_scenario_fpr']:.6f}",
+              (
+                  "- pooled unseen-attack recall: "
+                  f"{patef_holdout['unseen_attack_recall']:.6f}"
+              ),
+              (
+                  "- minimum attack-scenario recall: "
+                  f"{patef_holdout['minimum_attack_scenario_recall']:.6f}"
+              ),
+              f"- worst scenario FPR: {patef_holdout['worst_scenario_fpr']:.6f}",
           ]
           Path("patef-summary.md").write_text("\n".join(lines), encoding="utf-8")
           print(metrics.to_string(index=False))
+          print(holdout.to_string(index=False))
+          print(patef_detail.to_string(index=False))
           PY
           cat patef-summary.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: patef-benchmark-${{ github.run_id }}
           path: artifacts/patef-benchmark/

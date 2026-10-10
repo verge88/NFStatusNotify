@@ -5,6 +5,7 @@ dataset:
 evaluation:
   target_fpr: 0.001
   random_state: 42
+  scenario_holdout_cal_fraction: 0.25
 
 research:
   primary_metric: recall_at_target_fpr

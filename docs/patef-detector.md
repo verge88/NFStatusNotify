@@ -31,16 +31,42 @@ If a source is unavailable, its expert is gated to probability `0.5`
 (neutral evidence) and the availability mask is supplied to the fusion model.
 Missing telemetry is therefore not silently interpreted as normal.
 
-A held-out calibration set trains a sigmoid/Platt calibrator for the final risk
-score. The operational alarm threshold is then selected from the benign
-calibration distribution for the requested empirical FPR.
+A held-out calibration set trains a sigmoid/Platt calibrator. The operational
+alarm threshold is then selected from the benign calibration distribution for
+the requested empirical FPR.
+
+## Semantic transition guard
+
+The final risk is not allowed to rely on model probability alone. PA-TEF
+requires semantic support from at least one of these conditions:
+
+- a recently observed invalid/untrusted notification;
+- a persistent state conflict that remains unexplained by an NRF transition;
+- a cache transition without a recent legitimate NRF transition.
+
+A legitimate transition can be established either by explicit
+`nrf_update_seen` telemetry or by an observed change in `nrf_endpoint`.
+The endpoint-change detector remembers the last observed NRF value across
+missing samples. This recovers the common case where the update event itself was
+lost but the next NRF snapshot exposes the new endpoint.
+
+The grace window is 12 samples, matching the longest temporal aggregation
+window. `recovery_active` is also treated as a benign transition context.
+These contexts suppress state-divergence risk, but they do **not** suppress
+strong bad-notification evidence.
+
+This guard is intentionally domain-semantic rather than learned from one
+scenario template. It was added after scenario-disjoint validation showed that
+a purely learned fusion over-alerted on previously unseen delayed updates,
+missing telemetry and recovery windows.
 
 ## Output
 
 `risk_report()` returns:
 
-- `risk_score` — calibrated attack risk;
+- `risk_score` — calibrated model risk gated by semantic support;
 - `confidence` — evidence coverage, not attack probability;
+- `semantic_support` — the 0–1 semantic gate applied to model risk;
 - per-expert probabilities;
 - `dominant_evidence` such as persistent unexplained state divergence or an
   untrusted/unbound notification.
@@ -55,16 +81,17 @@ The implementation reports:
 - median detection delay;
 - attack-run coverage;
 - per-scenario metrics;
+- scenario-disjoint holdout metrics;
 - source ablations: no NRF, AUSF, route or notify telemetry.
 
 The real Open5GS GitHub Actions recovery scenario is also scored as an external
-benign control. It intentionally has `m_ausf=0` and `m_route=0`; PA-TEF
-must use the remaining provenance without inventing those sources.
+benign control. The later A→B→A failover experiment additionally records real
+NRF state, AUSF cache evidence and the actual UDM route.
 
 ## Scientific interpretation
 
 The current PA-TEF implementation is a specialized research method, not by
 itself a claim of dissertation novelty. A defensible novelty claim should be
 based on reproducible gains over rules, Isolation Forest and the single-model
-provenance baseline under matched low-FPR operation, especially in source
-ablations and real recovery controls.
+provenance baseline under matched low-FPR operation, especially in
+scenario-disjoint evaluation, source ablations and real recovery controls.

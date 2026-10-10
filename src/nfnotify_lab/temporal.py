@@ -5,6 +5,7 @@ import pandas as pd
 
 
 TEMPORAL_WINDOWS = (3, 6, 12)
+TRANSITION_GRACE_STEPS = 12
 
 
 def _persistence(series: pd.Series) -> pd.Series:
@@ -27,6 +28,27 @@ def _since_event(series: pd.Series, cap: int = 25) -> pd.Series:
     return pd.Series(out, index=series.index)
 
 
+def _observed_change(series: pd.Series) -> pd.Series:
+    """Detect a value change across the last two *observed* samples.
+
+    Missing telemetry does not reset the remembered value. If an NRF update
+    event is lost while the endpoint observation is missing, the first later
+    observation of the new endpoint still records a transition.
+    """
+    out: list[float] = []
+    previous: object | None = None
+    seen = False
+    for value in series:
+        if pd.isna(value):
+            out.append(float("nan"))
+            continue
+        changed = float(seen and value != previous)
+        out.append(changed)
+        previous = value
+        seen = True
+    return pd.Series(out, index=series.index)
+
+
 def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
     """Add temporal/provenance features without crossing run boundaries."""
     out = df.copy().sort_values(["run_id", "t"]).reset_index(drop=True)
@@ -37,6 +59,9 @@ def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
         * out["notify_subscription_valid"].fillna(0.0)
     )
     out["bad_notify_seen"] = out["delta_notify"].fillna(0.0)
+    out["nrf_endpoint_changed"] = out.groupby("run_id", sort=False)[
+        "nrf_endpoint"
+    ].transform(_observed_change)
 
     state_pair = out[["delta_nrf_ausf", "delta_route"]]
     out["state_conflict"] = state_pair.max(axis=1, skipna=True)
@@ -71,6 +96,17 @@ def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
             lambda s: s.fillna(0.0).rolling(6, min_periods=1).max()
         )
 
+    out["recent_nrf_update_seen_12"] = out.groupby("run_id", sort=False)[
+        "nrf_update_seen"
+    ].transform(
+        lambda s: s.fillna(0.0).rolling(TRANSITION_GRACE_STEPS, min_periods=1).max()
+    )
+    out["recent_nrf_endpoint_changed_12"] = out.groupby("run_id", sort=False)[
+        "nrf_endpoint_changed"
+    ].transform(
+        lambda s: s.fillna(0.0).rolling(TRANSITION_GRACE_STEPS, min_periods=1).max()
+    )
+
     out["state_conflict_persist"] = out.groupby("run_id", sort=False)[
         "state_conflict"
     ].transform(_persistence)
@@ -84,16 +120,22 @@ def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
     out["since_nrf_update"] = out.groupby("run_id", sort=False)[
         "nrf_update_seen"
     ].transform(_since_event)
+    out["since_nrf_endpoint_change"] = out.groupby("run_id", sort=False)[
+        "nrf_endpoint_changed"
+    ].transform(_since_event)
     out["since_notify"] = out.groupby("run_id", sort=False)["notify_seen"].transform(
         _since_event
     )
 
+    observed_transition = np.maximum(
+        out["recent_nrf_update_seen_12"].fillna(0.0),
+        out["recent_nrf_endpoint_changed_12"].fillna(0.0),
+    )
     out["unexplained_conflict"] = (
-        out["state_conflict"].fillna(0.0)
-        * (1.0 - out["recent_nrf_update_seen_6"].fillna(0.0))
+        out["state_conflict"].fillna(0.0) * (1.0 - observed_transition)
     )
     out["trusted_transition"] = np.maximum(
-        out["recent_nrf_update_seen_6"].fillna(0.0),
+        observed_transition,
         out["recent_trusted_notify_seen_6"].fillna(0.0),
     ) * (1.0 - out["bad_notify_seen"].fillna(0.0))
 

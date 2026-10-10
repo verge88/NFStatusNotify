@@ -1,8 +1,14 @@
+import numpy as np
 import pandas as pd
 
 from nfnotify_lab.evaluate import evaluate_all
 from nfnotify_lab.features import build_features
-from nfnotify_lab.simulator import DEFAULT_SCENARIOS, simulate_dataset
+from nfnotify_lab.simulator import (
+    DEFAULT_SCENARIOS,
+    Scenario,
+    simulate_dataset,
+    simulate_run,
+)
 
 
 def test_patef_detects_forged_notify_at_low_fpr():
@@ -24,3 +30,18 @@ def test_temporal_features_do_not_cross_runs():
     assert (first_rows["state_conflict_persist"] == 0).all()
     assert (first_rows["since_notify"] >= 0).all()
     assert isinstance(features, pd.DataFrame)
+
+
+def test_endpoint_change_recovers_a_missed_update_event():
+    scenario = Scenario("missed_update_probe", legit_update_at=5, notify_delay=3)
+    raw = simulate_run(scenario, seed=0, steps=12)
+    missed = raw["t"] == 5
+    raw.loc[missed, "nrf_endpoint"] = None
+    raw.loc[missed, "nrf_update_seen"] = np.nan
+
+    features = build_features(raw)
+    first_visible_new_endpoint = features.loc[features["t"] == 6].iloc[0]
+
+    assert first_visible_new_endpoint["nrf_endpoint_changed"] == 1.0
+    assert first_visible_new_endpoint["recent_nrf_endpoint_changed_12"] == 1.0
+    assert first_visible_new_endpoint["trusted_transition"] == 1.0

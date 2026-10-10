@@ -28,7 +28,9 @@ poisoning, но не содержит эксплуатационного сет�
 - `rules` — жёсткий semantic-consistency baseline;
 - `isolation_forest` — unsupervised baseline, обучение только на benign train;
 - `provenance_aware` — ML baseline, использующий признаки рассогласования,
-  маски доступности и provenance.
+  маски доступности и provenance;
+- `patef` — provenance-aware temporal evidence fusion: независимые evidence
+  experts, availability gating и out-of-fold fusion.
 
 Текущая provenance-aware модель — **исследовательская отправная точка**, а не
 заявление о научной новизне. Новизну следует доказывать через новый метод
@@ -51,7 +53,10 @@ nfnotify-lab all --config configs/experiment.yaml --out artifacts
 - `artifacts/observations.csv` — исходные временные наблюдения;
 - `artifacts/features.csv` — признаки и маски provenance;
 - `artifacts/metrics.csv` — FPR, Recall@target-FPR, detection delay;
-- `artifacts/ablations.csv` — абляции независимых источников.
+- `artifacts/ablations.csv` — абляции независимых источников;
+- `artifacts/scenario-holdout.csv` — результаты scenario-disjoint holdout;
+- `artifacts/scenario-holdout-summary.csv` — агрегированная оценка
+  generalization на невиденные сценарии.
 
 Целевой FPR по умолчанию: `0.001` (0,1%).
 
@@ -82,6 +87,8 @@ nfnotify-lab all --config configs/experiment.yaml --out artifacts
 
 - [Threat model и границы безопасности](docs/threat-model.md)
 - [Экспериментальный протокол](docs/experiment-design.md)
+- [PA-TEF detector](docs/patef-detector.md)
+- [Scenario-disjoint evaluation](docs/scenario-holdout.md)
 - [Контракт подключения Open5GS telemetry](adapters/open5gs/README.md)
 
 ## Интеграция с Open5GS

@@ -8,7 +8,12 @@ import yaml
 
 from .ablation import evaluate_ablations
 from .control import score_benign_control
-from .evaluate import evaluate_all, evaluate_by_scenario
+from .evaluate import (
+    evaluate_all,
+    evaluate_by_scenario,
+    evaluate_scenario_holdout,
+    summarize_scenario_holdout,
+)
 from .features import build_features
 from .schema import validate_observations
 from .simulator import DEFAULT_SCENARIOS, simulate_dataset
@@ -51,6 +56,7 @@ def main() -> None:
             "ingest",
             "evaluate",
             "ablate",
+            "holdout",
             "score-control",
             "all",
         ),
@@ -86,6 +92,9 @@ def main() -> None:
 
     target_fpr = float(cfg["evaluation"]["target_fpr"])
     random_state = int(cfg["evaluation"]["random_state"])
+    holdout_cal_fraction = float(
+        cfg["evaluation"].get("scenario_holdout_cal_fraction", 0.25)
+    )
 
     if args.command in {"evaluate", "all"}:
         metrics = evaluate_all(
@@ -102,6 +111,18 @@ def main() -> None:
         ablations = evaluate_ablations(features, target_fpr=target_fpr)
         ablations.to_csv(out_dir / "ablations.csv", index=False)
         print(ablations.to_string(index=False))
+
+    if args.command in {"holdout", "all"}:
+        holdout = evaluate_scenario_holdout(
+            features,
+            target_fpr=target_fpr,
+            random_state=random_state,
+            calibration_fraction=holdout_cal_fraction,
+        )
+        holdout.to_csv(out_dir / "scenario-holdout.csv", index=False)
+        holdout_summary = summarize_scenario_holdout(holdout)
+        holdout_summary.to_csv(out_dir / "scenario-holdout-summary.csv", index=False)
+        print(holdout_summary.to_string(index=False))
 
     if args.command == "score-control":
         summary = score_benign_control(

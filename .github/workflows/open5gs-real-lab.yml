@@ -4,8 +4,10 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - main
       - lab/open5gs-real-observations
       - research/patef-specialized-detector
+      - research/scenario-disjoint-evaluation
     paths:
       - ".github/workflows/open5gs-real-lab.yml"
       - "scripts/open5gs_real_lab.py"
