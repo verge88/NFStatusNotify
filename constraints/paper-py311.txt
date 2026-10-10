@@ -1,0 +1,27 @@
+# Publication environment captured from successful CI run 38062366698
+# on main commit 247cfe9a2ea3ef1e0173ce08d904102fb844e29e.
+# Python: 3.11 on GitHub-hosted Linux runner.
+#
+# Use:
+#   PIP_CONSTRAINT=constraints/paper-py311.txt pip install -e ".[dev]"
+#
+# Direct dependencies
+numpy==2.4.6
+pandas==3.0.6
+scikit-learn==1.9.1
+PyYAML==6.0.3
+pytest==9.1.1
+ruff==0.17.0
+
+# Resolved transitive dependencies observed in the same successful CI run
+cloudpickle==3.1.2
+iniconfig==2.3.1
+joblib==1.6.0
+narwhals==2.27.1
+packaging==26.3
+pluggy==1.6.0
+Pygments==2.21.0
+python-dateutil==2.9.0.post0
+scipy==1.17.1
+six==1.17.0
+threadpoolctl==3.7.0

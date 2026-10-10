@@ -1,0 +1,110 @@
+name: Publication artifact freeze
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - publication/artifact-freeze-v1
+    paths:
+      - ".github/workflows/publication-freeze.yml"
+      - "constraints/paper-py311.txt"
+      - "publication/**"
+      - "scripts/**"
+      - "src/nfnotify_lab/**"
+      - "configs/**"
+      - "pyproject.toml"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  freeze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      PIP_CONSTRAINT: ${{ github.workspace }}/constraints/paper-py311.txt
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.17"
+
+      - name: Install frozen Python environment
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Validate frozen environment
+        run: |
+          ruff check src tests scripts
+          pytest -q
+          mkdir -p artifacts/publication-freeze
+          python -m pip freeze | sort > artifacts/publication-freeze/pip-freeze.txt
+          python scripts/capture_publication_environment.py
+
+      - name: Recompute publication benchmark
+        run: |
+          nfnotify-lab all             --config configs/patef-benchmark.yaml             --out artifacts/publication-freeze/benchmark
+
+      - name: Download referenced evidence runs
+        run: |
+          set -euxo pipefail
+          mkdir -p artifacts/publication-evidence
+
+          gh run download 38062366609             -D artifacts/publication-evidence/C1-current-benchmark
+          gh run download 38062366995             -D artifacts/publication-evidence/C2-current-real-failover
+          gh run download 38062366593             -D artifacts/publication-evidence/C3-current-benign-degradation
+          gh run download 38062366595             -D artifacts/publication-evidence/C4-current-real-recovery
+          gh run download 38060262689             -D artifacts/publication-evidence/C5-preregistered-candidate
+          gh run download 38058210231             -D artifacts/publication-evidence/C6-development-sensitivity
+          gh run download 38055330313             -D artifacts/publication-evidence/C7-historical-replication
+
+      - name: Build publication manifest and checksums
+        run: |
+          python scripts/build_publication_manifest.py
+          cp publication/evidence.json artifacts/publication-freeze/evidence.json
+          cp constraints/paper-py311.txt artifacts/publication-freeze/paper-py311.txt
+          git diff --exit-code
+
+      - name: Publication summary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(
+              Path("artifacts/publication-freeze/publication-manifest.json").read_text()
+          )
+          evidence = manifest["reference_evidence"]
+          lines = [
+              "## Publication artifact freeze",
+              "",
+              f"- source commit: {manifest['source_commit']}",
+              f"- referenced claims: {len(evidence['claims'])}",
+              f"- frozen files hashed: {len(manifest['files'])}",
+              "- Python: 3.11.17",
+              "- consensus_guard operating point: dual=1, single=8",
+              "- target FPR: 0.001",
+              "",
+              "### Manual blockers before DOI/archive submission",
+          ]
+          for blocker in evidence["manual_publication_blockers"]:
+              lines.append(f"- {blocker}")
+          Path("publication-summary.md").write_text("\n".join(lines) + "\n")
+          PY
+          cat publication-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: publication-freeze-${{ github.run_id }}
+          path: |
+            artifacts/publication-freeze/
+            artifacts/publication-evidence/
+            publication/evidence.json
+            constraints/paper-py311.txt
+          if-no-files-found: error
+          retention-days: 90
