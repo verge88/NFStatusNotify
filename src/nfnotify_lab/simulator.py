@@ -21,6 +21,11 @@ class Scenario:
     recovery_start: int | None = None
     recovery_end: int | None = None
     forged_notify_at: int | None = None
+    silent_divergence_at: int | None = None
+    silent_divergence_sources: tuple[str, ...] = ()
+    observer_skew_at: int | None = None
+    observer_skew_duration: int = 0
+    observer_skew_sources: tuple[str, ...] = ()
     missing_sources: tuple[str, ...] = ()
     missing_probability: float = 0.0
 
@@ -30,6 +35,18 @@ DEFAULT_SCENARIOS: tuple[Scenario, ...] = (
     Scenario("legit_update", legit_update_at=35, notify_delay=1),
     Scenario("delayed_notify", legit_update_at=35, notify_delay=8),
     Scenario("udm_recovery", recovery_start=30, recovery_end=45),
+    Scenario(
+        "cache_observer_skew",
+        observer_skew_at=30,
+        observer_skew_duration=6,
+        observer_skew_sources=("ausf",),
+    ),
+    Scenario(
+        "route_observer_skew",
+        observer_skew_at=30,
+        observer_skew_duration=6,
+        observer_skew_sources=("route",),
+    ),
     Scenario("forged_notify", attack=True, forged_notify_at=35),
     Scenario(
         "forged_notify_missing",
@@ -37,6 +54,24 @@ DEFAULT_SCENARIOS: tuple[Scenario, ...] = (
         forged_notify_at=35,
         missing_sources=("notify",),
         missing_probability=0.65,
+    ),
+    Scenario(
+        "silent_dual_divergence",
+        attack=True,
+        silent_divergence_at=35,
+        silent_divergence_sources=("ausf", "route"),
+    ),
+    Scenario(
+        "persistent_cache_divergence",
+        attack=True,
+        silent_divergence_at=35,
+        silent_divergence_sources=("ausf",),
+    ),
+    Scenario(
+        "persistent_route_divergence",
+        attack=True,
+        silent_divergence_at=35,
+        silent_divergence_sources=("route",),
     ),
     Scenario(
         "legit_update_missing",
@@ -52,6 +87,20 @@ def _drop(rng: np.random.Generator, source: str, scenario: Scenario) -> bool:
     return source in scenario.missing_sources and rng.random() < scenario.missing_probability
 
 
+def _attack_start(scenario: Scenario) -> int | None:
+    if scenario.forged_notify_at is not None:
+        return scenario.forged_notify_at
+    return scenario.silent_divergence_at
+
+
+def _observer_skew_active(scenario: Scenario, t: int) -> bool:
+    if scenario.observer_skew_at is None or scenario.observer_skew_duration <= 0:
+        return False
+    return scenario.observer_skew_at <= t < (
+        scenario.observer_skew_at + scenario.observer_skew_duration
+    )
+
+
 def simulate_run(
     scenario: Scenario,
     seed: int,
@@ -59,15 +108,18 @@ def simulate_run(
 ) -> pd.DataFrame:
     """Generate one isolated, synthetic observation run.
 
-    The forged-notification scenario reproduces only the *state consequence* of
-    cache poisoning inside the simulator. It does not send traffic to Open5GS or
-    craft an exploit payload.
+    Attack scenarios reproduce only state consequences inside the simulator.
+    They do not send traffic to Open5GS or craft an exploit payload.
+
+    Observer-skew scenarios alter only the reported AUSF/route observation for
+    a short benign window while the underlying simulated state stays unchanged.
     """
     rng = np.random.default_rng(seed)
     nrf_endpoint = LEGIT_UDM
     ausf_endpoint = LEGIT_UDM
     route_endpoint = LEGIT_UDM
     target_endpoint = LEGIT_UDM
+    attack_start = _attack_start(scenario)
 
     rows: list[dict[str, object]] = []
     for t in range(steps):
@@ -76,7 +128,7 @@ def simulate_run(
         notify_subscription_valid = 1
         notify_sender_trusted = 1
         recovery_active = 0
-        attack_active = 0
+        attack_active = int(attack_start is not None and t >= attack_start)
 
         if scenario.legit_update_at is not None and t == scenario.legit_update_at:
             target_endpoint = ALT_UDM
@@ -106,8 +158,22 @@ def simulate_run(
             ausf_endpoint = ROGUE_UDM
             route_endpoint = ROGUE_UDM
 
-        if scenario.forged_notify_at is not None and t >= scenario.forged_notify_at:
-            attack_active = 1
+        if (
+            scenario.silent_divergence_at is not None
+            and t == scenario.silent_divergence_at
+        ):
+            if "ausf" in scenario.silent_divergence_sources:
+                ausf_endpoint = ROGUE_UDM
+            if "route" in scenario.silent_divergence_sources:
+                route_endpoint = ROGUE_UDM
+
+        observed_ausf = ausf_endpoint
+        observed_route = route_endpoint
+        if _observer_skew_active(scenario, t):
+            if "ausf" in scenario.observer_skew_sources:
+                observed_ausf = ALT_UDM
+            if "route" in scenario.observer_skew_sources:
+                observed_route = ALT_UDM
 
         nrf_available = int(not _drop(rng, "nrf", scenario))
         ausf_available = int(not _drop(rng, "ausf", scenario))
@@ -122,16 +188,18 @@ def simulate_run(
                 "t": t,
                 "label": int(scenario.attack),
                 "attack_active": attack_active,
-                "attack_start": scenario.forged_notify_at if scenario.attack else -1,
+                "attack_start": attack_start if scenario.attack else -1,
                 "nrf_endpoint": nrf_endpoint if nrf_available else None,
-                "ausf_endpoint": ausf_endpoint if ausf_available else None,
-                "route_endpoint": route_endpoint if route_available else None,
+                "ausf_endpoint": observed_ausf if ausf_available else None,
+                "route_endpoint": observed_route if route_available else None,
                 "nrf_update_seen": nrf_update_seen if nrf_available else np.nan,
                 "notify_seen": notify_seen if notify_available else np.nan,
                 "notify_subscription_valid": (
                     notify_subscription_valid if notify_available else np.nan
                 ),
-                "notify_sender_trusted": notify_sender_trusted if notify_available else np.nan,
+                "notify_sender_trusted": (
+                    notify_sender_trusted if notify_available else np.nan
+                ),
                 "recovery_active": recovery_active,
                 "m_nrf": nrf_available,
                 "m_ausf": ausf_available,

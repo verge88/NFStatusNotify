@@ -17,9 +17,24 @@ Provenance-aware модель должна сохранять более выс�
 | `legit_update` | Корректный NRF update → notify → смена маршрута |
 | `delayed_notify` | Легитимный notify с задержкой, создающей временное рассогласование |
 | `udm_recovery` | Отказ/восстановление UDM |
+| `cache_observer_skew` | Benign: краткое устаревшее наблюдение AUSF при корректном NRF/route |
+| `route_observer_skew` | Benign: краткое устаревшее наблюдение route при корректном NRF/AUSF |
 | `forged_notify` | Моделируемый постэффект cache poisoning без изменения NRF |
 | `forged_notify_missing` | То же при деградации notify-телеметрии |
+| `silent_dual_divergence` | Симулируемое устойчивое AUSF+route рассогласование без bad-notify evidence |
+| `persistent_cache_divergence` | Симулируемое устойчивое cache-only рассогласование |
+| `persistent_route_divergence` | Симулируемое устойчивое route-only рассогласование |
 | `legit_update_missing` | Легитимный переход при неполной наблюдаемости |
+
+Observer-skew сценарии меняют только наблюдаемое значение одного источника на
+коротком интервале; underlying simulated state не меняется. Они создают
+benign semantic support, который пересекается со support устойчивого
+single-source divergence. Это специально лишает semantic guard идеальной
+разделимости и проверяет, может ли ML использовать длительность,
+согласованность независимых источников и provenance.
+
+Все attack-like сценарии выше существуют только как симулируемый post-effect.
+Стенд не создаёт и не отправляет forged SBI payload в Open5GS.
 
 ## Признаки
 
@@ -37,15 +52,20 @@ Provenance-aware модель должна сохранять более выс�
 ## Базовые методы
 
 1. `rules`: детерминированная оценка семантических противоречий.
-2. `isolation_forest`: unsupervised baseline, обучаемый только на benign train.
-3. `provenance_aware`: supervised baseline, явно использующий маски и
-   provenance. Это каркас для будущего научного метода, а не утверждение о
-   новизне текущего классификатора.
+2. `semantic_guard`: exact deterministic baseline для semantic support,
+   используемого PA-TEF.
+3. `isolation_forest`: unsupervised baseline, обучаемый только на benign train.
+4. `provenance_aware`: supervised baseline, явно использующий маски и
+   provenance.
+5. `patef`: learned evidence fusion поверх того же semantic support.
 
 ## Разделение данных
 
 Разделение train/calibration/test выполняется **по run_id**, чтобы соседние
 точки одного временного эпизода не попадали в разные выборки.
+
+Дополнительно используется scenario-disjoint holdout: каждый тип сценария
+полностью исключается из training и calibration и оценивается как unseen test.
 
 Порог каждого детектора выбирается только на calibration set по
 эмпирическому benign score distribution для целевого FPR.
@@ -69,7 +89,7 @@ event и mask-поля выбранного источника, после че�
 
 ## Критерий, при котором ML не оправдан
 
-Если rule baseline при равном или меньшем FPR стабильно имеет не худшие
-Recall и detection delay во всех абляциях, исследуемый механизм следует
-оставить в детерминированном контуре, а Data Mining перенести на другую
-задачу.
+Если `semantic_guard` при равном или меньшем FPR стабильно имеет не худшие
+Recall и detection delay на run-level, scenario-disjoint и leak-free ablation
+оценках, learned fusion не имеет подтверждённого incremental value и не должен
+позиционироваться как deployable преимущество.

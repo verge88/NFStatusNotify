@@ -104,29 +104,47 @@ The real Open5GS GitHub Actions recovery scenario is also scored as an external
 benign control. The later A→B→A failover experiment additionally records real
 NRF state, AUSF cache evidence and the actual UDM route.
 
-## Current hypothesis result
+## Current hard-generalization result
 
-On the fixed 60-seed benchmark at target FPR 0.1%, the standalone
-`semantic_guard` and PA-TEF produce identical decisions:
+The original seven-scenario benchmark was too easy for the deterministic
+semantic support: `semantic_guard` and PA-TEF produced identical decisions.
+The benchmark now includes benign single-source observer skew plus persistent
+single-source and dual-source divergence. Benign skew intentionally overlaps
+the semantic support of a real persistent divergence for its first samples.
 
-- ordinary run-level split: FPR 0 and Recall 1.0 for both;
-- scenario-disjoint holdout: pooled FPR 0.000032 and Recall 1.0 for both;
-- worst unseen benign-scenario FPR: 0.000185 for both;
-- the no-NRF ablation is also identical and remains the main weakness
-  (Recall 0.069818).
+On the fixed 60-seed, 90-step, 12-scenario benchmark at target FPR 0.1%:
 
-Accordingly, `hypothesis-check.json` reports
-`scenario_disjoint_ml_advantage_observed: false`. The present evidence does
-**not** support claiming that learned evidence fusion improves detection beyond
-the specialized deterministic semantics. PA-TEF remains useful as an
-experimental comparator, but the current deployable candidate should be treated
-as the semantic guard unless a later dataset demonstrates reproducible
-incremental value from ML.
+- ordinary run-level split: PA-TEF FPR 0 and Recall 0.794357;
+- ordinary run-level split: semantic guard FPR 0 and Recall 0;
+- scenario-disjoint PA-TEF pooled FPR 0.009938 and Recall 0.944970;
+- scenario-disjoint semantic guard pooled FPR 0 and Recall 0;
+- PA-TEF worst unseen benign-scenario FPR is 0.055556;
+- minimum PA-TEF recall across unseen attack scenarios is 0.890909.
+
+Adding source-symmetric conflict topology improved PA-TEF unseen recall from
+0.450667 to 0.944970 without changing the pooled unseen FPR. This is evidence
+that the learned model can transfer persistence/topology structure across
+cache-only and route-only divergence, but it still over-alerts on an unseen
+single-source observer skew.
+
+Accordingly, the current ML result is **not deployable at the stated low-FPR
+objective**. The candidate exceeds the 0.1% FPR budget by roughly an order of
+magnitude on scenario-disjoint evaluation. The benchmark therefore reports
+both strict dominance and a separate `ml_advantage_at_target_fpr` status; a
+positive recall gain is not counted as an advantage unless the candidate also
+meets the common FPR budget.
+
+The next useful provenance signal is source freshness/staleness. Without a
+freshness observation, a short but real single-source divergence is
+information-theoretically difficult to distinguish online from a stale
+single-source observer snapshot before enough persistence accumulates.
 
 ## Scientific interpretation
 
-The current PA-TEF implementation is a specialized research method, not by
-itself a claim of dissertation novelty. A defensible novelty claim should be
-based on reproducible gains over rules, Isolation Forest and the single-model
-provenance baseline under matched low-FPR operation, especially in
-scenario-disjoint evaluation, source ablations and real recovery controls.
+The current PA-TEF implementation remains a research comparator, not a
+deployable superiority claim. The stronger benchmark now demonstrates both a
+real learned generalization benefit (attack recall) and a decisive operational
+failure (unseen benign FPR). A defensible novelty claim requires reducing that
+FPR below the target without using the held-out scenario to tune the threshold,
+and still beating the deterministic semantic guard under leak-free source
+ablations and real Open5GS controls.

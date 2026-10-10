@@ -17,6 +17,15 @@ EXPERT_FEATURES: dict[str, tuple[str, ...]] = {
         "delta_route",
         "state_conflict",
         "state_conflict_persist",
+        "state_pair_available_count",
+        "conflict_source_count",
+        "single_source_conflict",
+        "dual_source_conflict",
+        "single_source_conflict_persist",
+        "dual_source_conflict_persist",
+        "conflict_source_count_mean_6",
+        "single_source_conflict_mean_6",
+        "dual_source_conflict_mean_6",
         "route_conflict_persist",
         "cache_conflict_persist",
         "delta_nrf_ausf_mean_3",
@@ -58,6 +67,11 @@ EXPERT_FEATURES: dict[str, tuple[str, ...]] = {
         "recent_nrf_update_seen_12",
         "recent_nrf_endpoint_changed_12",
         "state_conflict_persist",
+        "single_source_conflict_persist",
+        "dual_source_conflict_persist",
+        "conflict_source_count_mean_6",
+        "single_source_conflict_mean_6",
+        "dual_source_conflict_mean_6",
         "unexplained_conflict",
         "trusted_transition",
         "delta_time_mean_3",
@@ -96,6 +110,9 @@ META_FEATURES = (
     "recovery_active",
     "transition_context",
     "state_conflict_persist_norm",
+    "single_source_conflict_persist_norm",
+    "dual_source_conflict_persist_norm",
+    "conflict_source_fraction",
     "recent_bad_notify",
     "unexplained_conflict",
 )
@@ -221,6 +238,26 @@ class ProvenanceAwareTemporalEvidenceFusion:
                 .clip(0, 12)
                 .astype(float)
                 / 12.0,
+                "single_source_conflict_persist_norm": x[
+                    "single_source_conflict_persist"
+                ]
+                .fillna(0.0)
+                .clip(0, 12)
+                .astype(float)
+                / 12.0,
+                "dual_source_conflict_persist_norm": x[
+                    "dual_source_conflict_persist"
+                ]
+                .fillna(0.0)
+                .clip(0, 12)
+                .astype(float)
+                / 12.0,
+                "conflict_source_fraction": (
+                    x["conflict_source_count"].fillna(0.0)
+                    / x["state_pair_available_count"].replace(0.0, np.nan)
+                )
+                .fillna(0.0)
+                .clip(0.0, 1.0),
                 "recent_bad_notify": x["recent_bad_notify_seen_6"]
                 .fillna(0.0)
                 .astype(float),

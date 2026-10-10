@@ -67,12 +67,35 @@ def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
     out["state_conflict"] = state_pair.max(axis=1, skipna=True)
     out.loc[state_pair.isna().all(axis=1), "state_conflict"] = np.nan
 
+    cache_pair_available = out["prov_nrf_ausf"].fillna(0.0) > 0
+    route_pair_available = out["prov_route"].fillna(0.0) > 0
+    out["state_pair_available_count"] = (
+        cache_pair_available.astype(float) + route_pair_available.astype(float)
+    )
+    cache_conflict = (
+        out["delta_nrf_ausf"].fillna(0.0) * cache_pair_available.astype(float)
+    )
+    route_conflict = (
+        out["delta_route"].fillna(0.0) * route_pair_available.astype(float)
+    )
+    out["conflict_source_count"] = cache_conflict + route_conflict
+    complete_state_view = out["state_pair_available_count"] == 2.0
+    out["single_source_conflict"] = (
+        complete_state_view & out["conflict_source_count"].eq(1.0)
+    ).astype(float)
+    out["dual_source_conflict"] = (
+        complete_state_view & out["conflict_source_count"].eq(2.0)
+    ).astype(float)
+
     rolling_columns = (
         "delta_nrf_ausf",
         "delta_route",
         "delta_notify",
         "delta_time",
         "state_conflict",
+        "conflict_source_count",
+        "single_source_conflict",
+        "dual_source_conflict",
         "recovery_active",
         "obs_fraction",
     )
@@ -115,6 +138,12 @@ def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
     ].transform(_persistence)
     out["cache_conflict_persist"] = out.groupby("run_id", sort=False)[
         "delta_nrf_ausf"
+    ].transform(_persistence)
+    out["single_source_conflict_persist"] = out.groupby("run_id", sort=False)[
+        "single_source_conflict"
+    ].transform(_persistence)
+    out["dual_source_conflict_persist"] = out.groupby("run_id", sort=False)[
+        "dual_source_conflict"
     ].transform(_persistence)
 
     out["since_nrf_update"] = out.groupby("run_id", sort=False)[

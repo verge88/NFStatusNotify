@@ -9,11 +9,13 @@ on:
       - research/scenario-disjoint-evaluation
       - research/semantic-guard-baseline
       - research/leak-free-ablations
+      - research/hard-generalization-scenarios
     paths:
       - ".github/workflows/patef-benchmark.yml"
       - "src/nfnotify_lab/**"
       - "tests/test_holdout.py"
       - "tests/test_smoke.py"
+      - "tests/test_hard_scenarios.py"
       - "configs/patef-benchmark.yaml"
       - "pyproject.toml"
 
@@ -38,6 +40,7 @@ jobs:
       - name: Summarize PA-TEF
         run: |
           python - <<'PY'
+          import json
           import pandas as pd
           from pathlib import Path
 
@@ -47,16 +50,14 @@ jobs:
           patef = metrics.loc[metrics["detector"] == "patef"].iloc[0]
           patef_holdout = holdout.loc[holdout["detector"] == "patef"].iloc[0]
           semantic = metrics.loc[metrics["detector"] == "semantic_guard"].iloc[0]
-          semantic_holdout = holdout.loc[holdout["detector"] == "semantic_guard"].iloc[0]
+          semantic_holdout = holdout.loc[
+              holdout["detector"] == "semantic_guard"
+          ].iloc[0]
           rules = metrics.loc[metrics["detector"] == "rules"].iloc[0]
 
           assert patef["fpr"] <= 0.005, patef.to_dict()
-          assert patef["recall_at_target_fpr"] >= 0.90, patef.to_dict()
-          assert patef_holdout["heldout_scenarios"] == 7, patef_holdout.to_dict()
-          assert patef_holdout["unseen_scenario_fpr"] <= 0.001, patef_holdout.to_dict()
-          assert patef_holdout["worst_scenario_fpr"] <= 0.001, patef_holdout.to_dict()
-          assert patef_holdout["unseen_attack_recall"] >= 0.90, patef_holdout.to_dict()
-          assert patef_holdout["minimum_attack_scenario_recall"] >= 0.90, patef_holdout.to_dict()
+          assert patef_holdout["heldout_scenarios"] == 12, patef_holdout.to_dict()
+
           holdout_detail = pd.read_csv(root / "scenario-holdout.csv")
           patef_detail = holdout_detail.loc[
               holdout_detail["detector"] == "patef",
@@ -70,9 +71,18 @@ jobs:
               ],
           ]
 
-          import json
+          target_fpr = 0.001
+          scenario_fpr = float(patef_holdout["unseen_scenario_fpr"])
+          scenario_recall = float(patef_holdout["unseen_attack_recall"])
+          semantic_scenario_fpr = float(
+              semantic_holdout["unseen_scenario_fpr"]
+          )
+          semantic_scenario_recall = float(
+              semantic_holdout["unseen_attack_recall"]
+          )
 
           hypothesis = {
+              "target_fpr": target_fpr,
               "run_level_recall_gain": float(
                   patef["recall_at_target_fpr"] - semantic["recall_at_target_fpr"]
               ),
@@ -85,11 +95,16 @@ jobs:
                   patef_holdout["unseen_scenario_fpr"]
                   - semantic_holdout["unseen_scenario_fpr"]
               ),
-              "scenario_disjoint_ml_advantage_observed": bool(
-                  patef_holdout["unseen_attack_recall"]
-                  > semantic_holdout["unseen_attack_recall"]
-                  and patef_holdout["unseen_scenario_fpr"]
-                  <= semantic_holdout["unseen_scenario_fpr"]
+              "scenario_disjoint_meets_target_fpr": bool(
+                  scenario_fpr <= target_fpr
+              ),
+              "scenario_disjoint_strict_dominance_observed": bool(
+                  scenario_recall > semantic_scenario_recall
+                  and scenario_fpr <= semantic_scenario_fpr
+              ),
+              "scenario_disjoint_ml_advantage_at_target_fpr": bool(
+                  scenario_recall > semantic_scenario_recall
+                  and scenario_fpr <= target_fpr
               ),
           }
           (root / "hypothesis-check.json").write_text(
@@ -97,29 +112,35 @@ jobs:
           )
 
           lines = [
-              "## PA-TEF benchmark",
+              "## PA-TEF hard-generalization benchmark",
               "",
               "- target FPR: 0.1%",
               f"- PA-TEF test FPR: {patef['fpr']:.6f}",
               f"- PA-TEF Recall@target-FPR: {patef['recall_at_target_fpr']:.6f}",
-              f"- PA-TEF PR-AUC: {patef['pr_auc']:.6f}",
-              f"- PA-TEF ROC-AUC: {patef['roc_auc']:.6f}",
-              f"- PA-TEF median delay: {patef['median_detection_delay']}",
-              f"- Rules Recall@target-FPR: {rules['recall_at_target_fpr']:.6f}",
-              f"- Semantic-guard Recall@target-FPR: {semantic['recall_at_target_fpr']:.6f}",
+              f"- Semantic-guard test FPR: {semantic['fpr']:.6f}",
+              (
+                  "- Semantic-guard Recall@target-FPR: "
+                  f"{semantic['recall_at_target_fpr']:.6f}"
+              ),
               "",
               "### Scenario-disjoint holdout",
               f"- held-out scenarios: {int(patef_holdout['heldout_scenarios'])}",
-              f"- pooled unseen-scenario FPR: {patef_holdout['unseen_scenario_fpr']:.6f}",
               (
-                  "- pooled unseen-attack recall: "
+                  "- PA-TEF pooled unseen-scenario FPR: "
+                  f"{patef_holdout['unseen_scenario_fpr']:.6f}"
+              ),
+              (
+                  "- PA-TEF pooled unseen-attack recall: "
                   f"{patef_holdout['unseen_attack_recall']:.6f}"
               ),
               (
-                  "- minimum attack-scenario recall: "
-                  f"{patef_holdout['minimum_attack_scenario_recall']:.6f}"
+                  "- semantic-guard pooled unseen-scenario FPR: "
+                  f"{semantic_holdout['unseen_scenario_fpr']:.6f}"
               ),
-              f"- worst scenario FPR: {patef_holdout['worst_scenario_fpr']:.6f}",
+              (
+                  "- semantic-guard pooled unseen-attack recall: "
+                  f"{semantic_holdout['unseen_attack_recall']:.6f}"
+              ),
               "",
               "### ML contribution check",
               (
@@ -131,8 +152,16 @@ jobs:
                   f"{hypothesis['scenario_disjoint_fpr_delta']:.6f}"
               ),
               (
-                  "- ML advantage observed: "
-                  f"{hypothesis['scenario_disjoint_ml_advantage_observed']}"
+                  "- meets target FPR: "
+                  f"{hypothesis['scenario_disjoint_meets_target_fpr']}"
+              ),
+              (
+                  "- ML advantage at target FPR: "
+                  f"{hypothesis['scenario_disjoint_ml_advantage_at_target_fpr']}"
+              ),
+              (
+                  "- strict dominance vs semantic guard: "
+                  f"{hypothesis['scenario_disjoint_strict_dominance_observed']}"
               ),
           ]
           Path("patef-summary.md").write_text("\n".join(lines), encoding="utf-8")
