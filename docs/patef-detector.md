@@ -148,3 +148,20 @@ failure (unseen benign FPR). A defensible novelty claim requires reducing that
 FPR below the target without using the held-out scenario to tune the threshold,
 and still beating the deterministic semantic guard under leak-free source
 ablations and real Open5GS controls.
+
+## Source freshness provenance experiment
+
+Следующий эксперимент добавляет optional `nrf_age_steps`,
+`ausf_age_steps` и `route_age_steps`. PA-TEF использует только
+source-symmetric агрегаты freshness/conflict topology; deterministic
+`semantic_guard` остаётся неизменным.
+
+В synthetic observer-skew затронутый источник стареет на каждом sampling step,
+тогда как свежая persistent divergence имеет age=0. В реальном failover live
+NRF discovery и probe route имеют age=0; AUSF cache age оценивается как число
+sample-интервалов с последнего подтверждённого cache-event. Неизвестная
+freshness остаётся NaN.
+
+`no_freshness` ablation обязательна: если улучшение исчезает без age
+provenance, вывод должен формулироваться как ценность дополнительного
+freshness-сенсора, а не как чистое преимущество learned fusion.

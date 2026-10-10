@@ -20,6 +20,15 @@ MODEL_FEATURES = [
     "prov_nrf_ausf",
     "prov_route",
     "prov_notify",
+    "nrf_age_steps",
+    "ausf_age_steps",
+    "route_age_steps",
+    "freshness_coverage",
+    "fresh_conflict_source_count",
+    "stale_conflict_source_count",
+    "unknown_freshness_conflict_source_count",
+    "fresh_conflict_fraction",
+    "stale_conflict_fraction",
 ]
 
 
@@ -32,6 +41,15 @@ def _neq(a: object, b: object) -> float:
 def build_features(df: pd.DataFrame) -> pd.DataFrame:
     """Build semantic, temporal and provenance features per run."""
     out = df.copy().sort_values(["run_id", "t"]).reset_index(drop=True)
+
+    for source in ("nrf", "ausf", "route"):
+        age = f"{source}_age_steps"
+        mask = f"m_{source}"
+        if age not in out.columns:
+            out[age] = np.nan
+        else:
+            out[age] = pd.to_numeric(out[age], errors="coerce").clip(lower=0.0)
+        out.loc[out[mask].fillna(0).astype(float) <= 0.0, age] = np.nan
 
     out["delta_nrf_ausf"] = [
         _neq(a, b) for a, b in zip(out["nrf_endpoint"], out["ausf_endpoint"], strict=False)

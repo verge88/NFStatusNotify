@@ -107,3 +107,36 @@ def test_conflict_topology_is_source_symmetric():
     assert route_attack_f["single_source_conflict_persist"].iloc[-1] == 15.0
     assert (cache_attack_f["dual_source_conflict"] == 0.0).all()
     assert (route_attack_f["dual_source_conflict"] == 0.0).all()
+
+
+def test_freshness_separates_stale_observer_skew_from_fresh_divergence():
+    benign = Scenario(
+        "freshness_cache_skew",
+        observer_skew_at=5,
+        observer_skew_duration=4,
+        observer_skew_sources=("ausf",),
+    )
+    attack = Scenario(
+        "freshness_cache_attack",
+        attack=True,
+        silent_divergence_at=5,
+        silent_divergence_sources=("ausf",),
+    )
+
+    benign_raw = simulate_run(benign, seed=0, steps=15)
+    attack_raw = simulate_run(attack, seed=0, steps=15)
+
+    benign_window = benign_raw[(benign_raw["t"] >= 5) & (benign_raw["t"] < 9)]
+    attack_window = attack_raw[attack_raw["t"] >= 5]
+    assert benign_window["ausf_age_steps"].tolist() == [1.0, 2.0, 3.0, 4.0]
+    assert (attack_window["ausf_age_steps"] == 0.0).all()
+
+    benign_f = build_features(benign_raw)
+    attack_f = build_features(attack_raw)
+    benign_window_f = benign_f[(benign_f["t"] >= 5) & (benign_f["t"] < 9)]
+    attack_window_f = attack_f[attack_f["t"] >= 5]
+
+    assert (benign_window_f["stale_conflict_source_count"] == 1.0).all()
+    assert (benign_window_f["fresh_conflict_source_count"] == 0.0).all()
+    assert (attack_window_f["fresh_conflict_source_count"] == 1.0).all()
+    assert (attack_window_f["stale_conflict_source_count"] == 0.0).all()

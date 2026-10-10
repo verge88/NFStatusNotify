@@ -87,6 +87,69 @@ def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
         complete_state_view & out["conflict_source_count"].eq(2.0)
     ).astype(float)
 
+    age_available = {
+        source: out[f"{source}_age_steps"].notna()
+        & out[f"m_{source}"].fillna(0.0).astype(float).gt(0.0)
+        for source in ("nrf", "ausf", "route")
+    }
+    available_state_sources = (
+        out["m_nrf"].fillna(0.0).astype(float)
+        + out["m_ausf"].fillna(0.0).astype(float)
+        + out["m_route"].fillna(0.0).astype(float)
+    )
+    known_age_sources = sum(mask.astype(float) for mask in age_available.values())
+    out["freshness_coverage"] = (
+        known_age_sources / available_state_sources.replace(0.0, np.nan)
+    ).fillna(0.0)
+
+    cache_age_known = age_available["nrf"] & age_available["ausf"]
+    route_age_known = age_available["nrf"] & age_available["route"]
+    cache_pair_age = pd.concat(
+        [out["nrf_age_steps"], out["ausf_age_steps"]], axis=1
+    ).max(axis=1, skipna=False)
+    route_pair_age = pd.concat(
+        [out["nrf_age_steps"], out["route_age_steps"]], axis=1
+    ).max(axis=1, skipna=False)
+
+    cache_conflict = out["delta_nrf_ausf"].fillna(0.0).gt(0.0)
+    route_conflict = out["delta_route"].fillna(0.0).gt(0.0)
+    out["fresh_conflict_source_count"] = (
+        (cache_conflict & cache_age_known & cache_pair_age.eq(0.0)).astype(float)
+        + (route_conflict & route_age_known & route_pair_age.eq(0.0)).astype(float)
+    )
+    out["stale_conflict_source_count"] = (
+        (cache_conflict & cache_age_known & cache_pair_age.gt(0.0)).astype(float)
+        + (route_conflict & route_age_known & route_pair_age.gt(0.0)).astype(float)
+    )
+    known_conflict_age_count = (
+        (cache_conflict & cache_age_known).astype(float)
+        + (route_conflict & route_age_known).astype(float)
+    )
+    out["unknown_freshness_conflict_source_count"] = (
+        out["conflict_source_count"] - known_conflict_age_count
+    ).clip(lower=0.0)
+    conflict_denominator = out["conflict_source_count"].replace(0.0, np.nan)
+    out["fresh_conflict_fraction"] = (
+        out["fresh_conflict_source_count"] / conflict_denominator
+    ).fillna(0.0)
+    out["stale_conflict_fraction"] = (
+        out["stale_conflict_source_count"] / conflict_denominator
+    ).fillna(0.0)
+    out["unknown_freshness_conflict_fraction"] = (
+        out["unknown_freshness_conflict_source_count"] / conflict_denominator
+    ).fillna(0.0)
+    out["max_state_age_steps"] = pd.concat(
+        [out["nrf_age_steps"], out["ausf_age_steps"], out["route_age_steps"]],
+        axis=1,
+    ).max(axis=1, skipna=True)
+    out.loc[
+        ~pd.concat(
+            [age_available["nrf"], age_available["ausf"], age_available["route"]],
+            axis=1,
+        ).any(axis=1),
+        "max_state_age_steps",
+    ] = np.nan
+
     rolling_columns = (
         "delta_nrf_ausf",
         "delta_route",
@@ -96,6 +159,12 @@ def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
         "conflict_source_count",
         "single_source_conflict",
         "dual_source_conflict",
+        "fresh_conflict_source_count",
+        "stale_conflict_source_count",
+        "unknown_freshness_conflict_source_count",
+        "fresh_conflict_fraction",
+        "stale_conflict_fraction",
+        "freshness_coverage",
         "recovery_active",
         "obs_fraction",
     )
@@ -144,6 +213,12 @@ def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
     ].transform(_persistence)
     out["dual_source_conflict_persist"] = out.groupby("run_id", sort=False)[
         "dual_source_conflict"
+    ].transform(_persistence)
+    out["fresh_conflict_persist"] = out.groupby("run_id", sort=False)[
+        "fresh_conflict_source_count"
+    ].transform(_persistence)
+    out["stale_conflict_persist"] = out.groupby("run_id", sort=False)[
+        "stale_conflict_source_count"
     ].transform(_persistence)
 
     out["since_nrf_update"] = out.groupby("run_id", sort=False)[

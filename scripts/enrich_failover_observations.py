@@ -63,9 +63,19 @@ def cache_events(path: Path, year: int, allowed: set[str]) -> list[tuple[float, 
     return sorted(events)
 
 
-def latest_cache(events: list[tuple[float, str]], epoch: float) -> str | None:
+def latest_cache_event(
+    events: list[tuple[float, str]], epoch: float
+) -> tuple[float, str] | None:
     candidates = [event for event in events if event[0] <= epoch + 0.5]
-    return candidates[-1][1] if candidates else None
+    return candidates[-1] if candidates else None
+
+
+def sample_age_steps(
+    event_epoch: float,
+    observation_epochs: list[float],
+    epoch: float,
+) -> int:
+    return sum(1 for value in observation_epochs if event_epoch < value < epoch)
 
 
 def make_counterfactual(
@@ -122,23 +132,32 @@ def main() -> None:
     if not cache:
         raise RuntimeError("no UDM cache endpoint events found in AUSF log")
 
+    observation_epochs = [float(row["epoch"]) for row in rows]
+
     for row in rows:
         epoch = float(row["epoch"])
 
-        ausf_endpoint = latest_cache(cache, epoch)
-        if ausf_endpoint:
+        cache_event = latest_cache_event(cache, epoch)
+        if cache_event:
+            cache_epoch, ausf_endpoint = cache_event
             row["ausf_endpoint"] = ausf_endpoint
+            row["ausf_age_steps"] = str(
+                sample_age_steps(cache_epoch, observation_epochs, epoch)
+            )
             row["m_ausf"] = "1"
         else:
             row["ausf_endpoint"] = ""
+            row["ausf_age_steps"] = ""
             row["m_ausf"] = "0"
 
         route = nearest(routes, epoch, 5.0)
         if route and route.get("ip.dst"):
             row["route_endpoint"] = f"{route['ip.dst']}:80"
+            row["route_age_steps"] = "0"
             row["m_route"] = "1"
         else:
             row["route_endpoint"] = ""
+            row["route_age_steps"] = ""
             row["m_route"] = "0"
 
         notify = nearest(notifications, epoch, 4.0)

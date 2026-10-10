@@ -23,6 +23,16 @@ EXPERT_FEATURES: dict[str, tuple[str, ...]] = {
         "dual_source_conflict",
         "single_source_conflict_persist",
         "dual_source_conflict_persist",
+        "fresh_conflict_persist",
+        "stale_conflict_persist",
+        "fresh_conflict_source_count",
+        "stale_conflict_source_count",
+        "fresh_conflict_fraction",
+        "stale_conflict_fraction",
+        "fresh_conflict_fraction_mean_6",
+        "stale_conflict_fraction_mean_6",
+        "freshness_coverage",
+        "max_state_age_steps",
         "conflict_source_count_mean_6",
         "single_source_conflict_mean_6",
         "dual_source_conflict_mean_6",
@@ -41,6 +51,20 @@ EXPERT_FEATURES: dict[str, tuple[str, ...]] = {
         "m_nrf",
         "m_ausf",
         "m_route",
+        "nrf_age_steps",
+        "ausf_age_steps",
+        "route_age_steps",
+        "freshness_coverage",
+        "max_state_age_steps",
+        "fresh_conflict_source_count",
+        "stale_conflict_source_count",
+        "unknown_freshness_conflict_source_count",
+        "fresh_conflict_fraction",
+        "stale_conflict_fraction",
+        "fresh_conflict_persist",
+        "stale_conflict_persist",
+        "fresh_conflict_fraction_mean_6",
+        "stale_conflict_fraction_mean_6",
     ),
     "notify": (
         "delta_notify",
@@ -94,6 +118,10 @@ EXPERT_FEATURES: dict[str, tuple[str, ...]] = {
         "recent_trusted_notify_seen_6",
         "obs_fraction",
         "evidence_coverage",
+        "freshness_coverage",
+        "max_state_age_steps",
+        "fresh_conflict_fraction",
+        "stale_conflict_fraction",
     ),
 }
 
@@ -113,6 +141,11 @@ META_FEATURES = (
     "single_source_conflict_persist_norm",
     "dual_source_conflict_persist_norm",
     "conflict_source_fraction",
+    "freshness_coverage",
+    "fresh_conflict_fraction",
+    "stale_conflict_fraction",
+    "fresh_conflict_persist_norm",
+    "stale_conflict_persist_norm",
     "recent_bad_notify",
     "unexplained_conflict",
 )
@@ -126,7 +159,14 @@ def _logit(values: np.ndarray) -> np.ndarray:
 def _expert_model(random_state: int) -> Pipeline:
     return Pipeline(
         [
-            ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
+            (
+                "imputer",
+                SimpleImputer(
+                    strategy="median",
+                    add_indicator=True,
+                    keep_empty_features=True,
+                ),
+            ),
             (
                 "model",
                 HistGradientBoostingClassifier(
@@ -258,6 +298,25 @@ class ProvenanceAwareTemporalEvidenceFusion:
                 )
                 .fillna(0.0)
                 .clip(0.0, 1.0),
+                "freshness_coverage": x["freshness_coverage"]
+                .fillna(0.0)
+                .clip(0.0, 1.0),
+                "fresh_conflict_fraction": x["fresh_conflict_fraction"]
+                .fillna(0.0)
+                .clip(0.0, 1.0),
+                "stale_conflict_fraction": x["stale_conflict_fraction"]
+                .fillna(0.0)
+                .clip(0.0, 1.0),
+                "fresh_conflict_persist_norm": x["fresh_conflict_persist"]
+                .fillna(0.0)
+                .clip(0, 12)
+                .astype(float)
+                / 12.0,
+                "stale_conflict_persist_norm": x["stale_conflict_persist"]
+                .fillna(0.0)
+                .clip(0, 12)
+                .astype(float)
+                / 12.0,
                 "recent_bad_notify": x["recent_bad_notify_seen_6"]
                 .fillna(0.0)
                 .astype(float),

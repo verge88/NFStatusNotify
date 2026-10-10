@@ -47,7 +47,10 @@ single-source divergence. Это специально лишает semantic guar
 - `m_*` — маски доступности источников;
 - `prov_*` — provenance-покрытие конкретного сравнения;
 - `recovery_active` — эксплуатационный контекст;
-- `obs_fraction` — доля доступных независимых источников.
+- `obs_fraction` — доля доступных независимых источников;
+- `*_age_steps` — optional provenance freshness источников;
+- `fresh/stale_conflict_*` — source-symmetric конфликтные признаки,
+  разделяющие свежую divergence и устаревшее observer evidence.
 
 ## Базовые методы
 
@@ -79,7 +82,8 @@ single-source divergence. Это специально лишает semantic guar
 - median detection delay после attack_start;
 - доля attack runs, где детектор сработал.
 
-Дополнительно запускается абляция `no_nrf/no_ausf/no_route/no_notify`.
+Дополнительно запускается абляция
+`no_nrf/no_ausf/no_route/no_notify/no_freshness`.
 
 Абляция выполняется **до feature engineering**: скрываются исходные endpoint,
 event и mask-поля выбранного источника, после чего semantic/temporal/provenance
@@ -119,3 +123,17 @@ CI.
 Recall и detection delay на run-level, scenario-disjoint и leak-free ablation
 оценках, learned fusion не имеет подтверждённого incremental value и не должен
 позиционироваться как deployable преимущество.
+
+## Freshness experiment
+
+Hard-generalization benchmark показал, что короткий benign single-source
+observer skew и свежая single-source divergence могут иметь одинаковый
+semantic support. Новый optional provenance signal `*_age_steps` проверяет,
+даёт ли явная freshness наблюдателя возможность снизить scenario-disjoint FPR
+без потери attack recall.
+
+Semantic guard намеренно не использует freshness. PA-TEF и generic ML-baselines
+получают source-symmetric freshness features, а `no_freshness` ablation
+показывает зависимость результата от дополнительного сенсора. Любой выигрыш
+следует интерпретировать как результат **нового provenance assumption**, а не
+как бесплатное улучшение классификатора.

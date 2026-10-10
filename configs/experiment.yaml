@@ -26,4 +26,5 @@ research:
     - no_ausf
     - no_route
     - no_notify
+    - no_freshness
   control_training_seeds: 60

@@ -10,6 +10,7 @@ on:
       - research/semantic-guard-baseline
       - research/leak-free-ablations
       - research/hard-generalization-scenarios
+      - research/source-freshness-provenance
     paths:
       - ".github/workflows/patef-benchmark.yml"
       - "src/nfnotify_lab/**"
@@ -47,6 +48,7 @@ jobs:
           root = Path("artifacts/patef-benchmark")
           metrics = pd.read_csv(root / "metrics.csv")
           holdout = pd.read_csv(root / "scenario-holdout-summary.csv")
+          ablations = pd.read_csv(root / "ablations.csv")
           patef = metrics.loc[metrics["detector"] == "patef"].iloc[0]
           patef_holdout = holdout.loc[holdout["detector"] == "patef"].iloc[0]
           semantic = metrics.loc[metrics["detector"] == "semantic_guard"].iloc[0]
@@ -54,6 +56,10 @@ jobs:
               holdout["detector"] == "semantic_guard"
           ].iloc[0]
           rules = metrics.loc[metrics["detector"] == "rules"].iloc[0]
+          no_freshness = ablations.loc[
+              (ablations["ablation"] == "no_freshness")
+              & (ablations["detector"] == "patef")
+          ].iloc[0]
 
           assert patef["fpr"] <= 0.005, patef.to_dict()
           assert patef_holdout["heldout_scenarios"] == 12, patef_holdout.to_dict()
@@ -163,6 +169,13 @@ jobs:
                   "- strict dominance vs semantic guard: "
                   f"{hypothesis['scenario_disjoint_strict_dominance_observed']}"
               ),
+              "",
+              "### Freshness dependence",
+              (
+                  "- PA-TEF no-freshness Recall@target-FPR: "
+                  f"{no_freshness['recall_at_target_fpr']:.6f}"
+              ),
+              f"- PA-TEF no-freshness FPR: {no_freshness['fpr']:.6f}",
           ]
           Path("patef-summary.md").write_text("\n".join(lines), encoding="utf-8")
           print(metrics.to_string(index=False))

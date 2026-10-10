@@ -8,6 +8,7 @@ on:
       - experiment/open5gs-instrumented-effect
       - research/scenario-disjoint-evaluation
       - research/external-control-candidate
+      - research/source-freshness-provenance
     paths:
       - ".github/workflows/open5gs-failover.yml"
       - "lab/open5gs/udm-b.yaml"

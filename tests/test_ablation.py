@@ -34,3 +34,17 @@ def test_no_notify_ablation_keeps_missing_notify_as_unknown_not_consistent():
     assert ablated["delta_notify"].isna().all()
     assert (ablated["recent_bad_notify_seen_6"] == 0).all()
     assert np.isfinite(ablated["obs_fraction"]).all()
+
+
+def test_no_freshness_ablation_removes_age_provenance():
+    raw = simulate_dataset(DEFAULT_SCENARIOS, seeds=range(2), steps=60)
+    features = build_features(raw)
+
+    ablated = apply_ablation(features, "no_freshness")
+
+    assert ablated["nrf_age_steps"].isna().all()
+    assert ablated["ausf_age_steps"].isna().all()
+    assert ablated["route_age_steps"].isna().all()
+    assert (ablated["freshness_coverage"] == 0.0).all()
+    assert (ablated["fresh_conflict_source_count"] == 0.0).all()
+    assert (ablated["stale_conflict_source_count"] == 0.0).all()

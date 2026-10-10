@@ -175,6 +175,16 @@ def simulate_run(
             if "route" in scenario.observer_skew_sources:
                 observed_route = ALT_UDM
 
+        nrf_age_steps = 0.0
+        ausf_age_steps = 0.0
+        route_age_steps = 0.0
+        if _observer_skew_active(scenario, t):
+            skew_age = float(t - int(scenario.observer_skew_at) + 1)
+            if "ausf" in scenario.observer_skew_sources:
+                ausf_age_steps = skew_age
+            if "route" in scenario.observer_skew_sources:
+                route_age_steps = skew_age
+
         nrf_available = int(not _drop(rng, "nrf", scenario))
         ausf_available = int(not _drop(rng, "ausf", scenario))
         route_available = int(not _drop(rng, "route", scenario))
@@ -201,6 +211,9 @@ def simulate_run(
                     notify_sender_trusted if notify_available else np.nan
                 ),
                 "recovery_active": recovery_active,
+                "nrf_age_steps": nrf_age_steps if nrf_available else np.nan,
+                "ausf_age_steps": ausf_age_steps if ausf_available else np.nan,
+                "route_age_steps": route_age_steps if route_available else np.nan,
                 "m_nrf": nrf_available,
                 "m_ausf": ausf_available,
                 "m_route": route_available,
