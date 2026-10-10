@@ -71,7 +71,18 @@ jobs:
               ],
           ]
 
+          target_fpr = 0.001
+          scenario_fpr = float(patef_holdout["unseen_scenario_fpr"])
+          scenario_recall = float(patef_holdout["unseen_attack_recall"])
+          semantic_scenario_fpr = float(
+              semantic_holdout["unseen_scenario_fpr"]
+          )
+          semantic_scenario_recall = float(
+              semantic_holdout["unseen_attack_recall"]
+          )
+
           hypothesis = {
+              "target_fpr": target_fpr,
               "run_level_recall_gain": float(
                   patef["recall_at_target_fpr"] - semantic["recall_at_target_fpr"]
               ),
@@ -84,11 +95,16 @@ jobs:
                   patef_holdout["unseen_scenario_fpr"]
                   - semantic_holdout["unseen_scenario_fpr"]
               ),
-              "scenario_disjoint_ml_advantage_observed": bool(
-                  patef_holdout["unseen_attack_recall"]
-                  > semantic_holdout["unseen_attack_recall"]
-                  and patef_holdout["unseen_scenario_fpr"]
-                  <= semantic_holdout["unseen_scenario_fpr"]
+              "scenario_disjoint_meets_target_fpr": bool(
+                  scenario_fpr <= target_fpr
+              ),
+              "scenario_disjoint_strict_dominance_observed": bool(
+                  scenario_recall > semantic_scenario_recall
+                  and scenario_fpr <= semantic_scenario_fpr
+              ),
+              "scenario_disjoint_ml_advantage_at_target_fpr": bool(
+                  scenario_recall > semantic_scenario_recall
+                  and scenario_fpr <= target_fpr
               ),
           }
           (root / "hypothesis-check.json").write_text(
@@ -136,8 +152,16 @@ jobs:
                   f"{hypothesis['scenario_disjoint_fpr_delta']:.6f}"
               ),
               (
-                  "- ML advantage observed: "
-                  f"{hypothesis['scenario_disjoint_ml_advantage_observed']}"
+                  "- meets target FPR: "
+                  f"{hypothesis['scenario_disjoint_meets_target_fpr']}"
+              ),
+              (
+                  "- ML advantage at target FPR: "
+                  f"{hypothesis['scenario_disjoint_ml_advantage_at_target_fpr']}"
+              ),
+              (
+                  "- strict dominance vs semantic guard: "
+                  f"{hypothesis['scenario_disjoint_strict_dominance_observed']}"
               ),
           ]
           Path("patef-summary.md").write_text("\n".join(lines), encoding="utf-8")
