@@ -143,3 +143,11 @@ change so that the preregistration/validation commit history remains auditable.
 
 Aggregate artifact:
 `frozen-candidate-validation-38060262689` (artifact ID `11673191863`).
+
+
+## Promotion status
+
+The candidate satisfied all preregistered criteria in run `38060262689`.
+A separate promotion change moves the default `consensus_guard` operating
+point from the historical 2/12 reference to the validated 1/8 setting. The
+historical constants remain available so prior results stay reproducible.

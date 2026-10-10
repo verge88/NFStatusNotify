@@ -4,8 +4,16 @@ import numpy as np
 import pandas as pd
 
 
-SINGLE_SOURCE_PERSISTENCE_STEPS = 12
-DUAL_SOURCE_PERSISTENCE_STEPS = 2
+# Historical conservative reference used before the preregistered candidate
+# validation. Kept explicitly for reproducibility of published comparisons.
+REFERENCE_SINGLE_SOURCE_PERSISTENCE_STEPS = 12
+REFERENCE_DUAL_SOURCE_PERSISTENCE_STEPS = 2
+
+# Current validated operating point. Selected on development-only sensitivity
+# run 38058210231, then independently validated on eight fresh Open5GS runs in
+# 38060262689 before promotion.
+SINGLE_SOURCE_PERSISTENCE_STEPS = 8
+DUAL_SOURCE_PERSISTENCE_STEPS = 1
 
 
 def consensus_attack_support(
@@ -24,9 +32,9 @@ def consensus_attack_support(
     - disagreement seen in only one independent observer needs a longer
       persistence window before it is considered suspicious.
 
-    The default operating point remains dual=2 / single=12. Parameters are
-    exposed so publication-time sensitivity analysis can evaluate the trade-off
-    without modifying detector code or using real-test labels for tuning.
+    The validated default is dual=1 / single=8. The historical conservative
+    reference dual=2 / single=12 remains available through explicit parameters
+    and named constants for reproducibility.
     """
     if single_source_steps < 1 or dual_source_steps < 1:
         raise ValueError("persistence steps must be >= 1")

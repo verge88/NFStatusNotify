@@ -55,9 +55,10 @@ single-source divergence. Это специально лишает semantic guar
 2. `semantic_guard`: exact deterministic baseline для semantic support,
    используемого PA-TEF.
 3. `consensus_guard`: deterministic source-consensus baseline. Bad-notify
-   escalates immediately, dual-source divergence requires two consecutive
-   samples, while single-source divergence requires a full 12-sample
-   persistence window.
+   escalates immediately, validated default dual-source divergence triggers
+   after 1 sample, while single-source divergence requires 8 consecutive
+   samples. Historical reference 2/12 remains reproducible through explicit
+   constants/parameters.
 4. `isolation_forest`: unsupervised baseline, обучаемый только на benign train.
 5. `provenance_aware`: supervised baseline, явно использующий маски и
    provenance.
@@ -188,16 +189,16 @@ Calibration diagnostics показывают, что max-score benign ties у
 двух независимых state-observer имеет большую доказательную силу, чем
 расхождение только одного observer.
 
-`consensus_guard` поэтому использует asymmetric persistence:
+`consensus_guard` использует asymmetric persistence:
 
 - bad/untrusted notify: immediate;
-- dual-source state conflict: минимум 2 последовательных sample;
-- single-source state conflict: минимум 12 последовательных sample.
+- validated default dual-source state conflict: 1 sample;
+- validated default single-source state conflict: 8 consecutive samples.
 
-Число 12 соответствует уже существующему максимальному temporal aggregation
-window, а не длине конкретного observer-skew сценария. Цена такой
-консервативности должна измеряться через detection delay и recall на
-persistent single-source divergence.
+Исторический conservative reference 2/12 сохраняется для воспроизводимости.
+Default 1/8 был выбран только на development-only sensitivity run
+`38058210231`, затем независимо подтверждён на 8 fresh Open5GS runs
+`38060262689` по заранее зафиксированным replacement criteria.
 
 Этот baseline не заменяет `semantic_guard`; оба сохраняются, чтобы можно было
 отделить выигрыш от source-consensus semantics от learned fusion.

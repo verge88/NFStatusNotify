@@ -12,6 +12,7 @@ on:
       - research/hard-generalization-scenarios
       - research/calibration-transfer-diagnostics
       - research/source-consensus-guard
+      - research/promote-consensus-1-8
     paths:
       - ".github/workflows/patef-benchmark.yml"
       - "src/nfnotify_lab/**"
