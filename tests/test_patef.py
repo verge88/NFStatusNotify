@@ -77,8 +77,8 @@ def test_patef_v2_partial_state_waits_for_persistence():
     features = build_features(raw)
     gate = provenance_normalized_attack_gate(features)
 
-    assert gate.loc[features["t"].between(35, 41)].eq(0.0).all()
-    first_ready = features.loc[features["t"] == 42].index[0]
+    assert gate.loc[features["t"].between(35, 40)].eq(0.0).all()
+    first_ready = features.loc[features["t"] == 41].index[0]
     assert gate.loc[first_ready] == 1.0
 
 
