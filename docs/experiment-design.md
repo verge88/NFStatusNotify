@@ -87,6 +87,32 @@ event и mask-поля выбранного источника, после че�
 могут переноситься в ablated dataset. Все варианты используют тот же
 `random_state` и run-level split, что основной benchmark.
 
+## Внешние Open5GS controls
+
+Реальные benign/recovery traces и контрфактический replay оцениваются двумя
+детекторами на одном и том же входе и synthetic calibration:
+
+- `semantic_guard` — обязательный deterministic comparator;
+- `patef` — learned comparator.
+
+Workflow success означает, что реальная A→B→A лаборатория и её evidence
+валидны: NRF, AUSF-cache и фактический route дают ожидаемые переходы, а benign
+trace не вызывает alert у сравниваемых детекторов. Контрфактический replay
+используется как **research transfer measurement**, а не как условие зелёного
+CI.
+
+Для каждого детектора сохраняются threshold, max risk, recall и FPR на
+контрфактическом post-effect, а также флаг `meets_external_target`.
+Это специально отделяет исправность стенда от качества текущего метода:
+отрицательный detector-result остаётся видимым в artifact, но не маскируется
+как инфраструктурная ошибка.
+
+На текущем 12-сценарном hard-generalization benchmark ни один из двух методов
+не удовлетворяет всем требованиям deployable candidate: `semantic_guard`
+теряет attack recall при строгом low-FPR threshold, а PA-TEF улучшает recall,
+но scenario-disjoint FPR остаётся выше целевых 0,1%. Поэтому external controls
+не должны заранее назначать один из них production-кандидатом.
+
 ## Критерий, при котором ML не оправдан
 
 Если `semantic_guard` при равном или меньшем FPR стабильно имеет не худшие

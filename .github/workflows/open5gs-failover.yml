@@ -7,6 +7,7 @@ on:
       - main
       - experiment/open5gs-instrumented-effect
       - research/scenario-disjoint-evaluation
+      - research/external-control-candidate
     paths:
       - ".github/workflows/open5gs-failover.yml"
       - "lab/open5gs/udm-b.yaml"
@@ -99,26 +100,46 @@ jobs:
           pip install -e .
 
           nfnotify-lab ingest             --observations "$LAB_DIR/observations.csv"             --out "$LAB_DIR/real"
-          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/real"
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/real"             --detector semantic_guard
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/real"             --detector patef
 
           nfnotify-lab ingest             --observations "$LAB_DIR/counterfactual-observations.csv"             --out "$LAB_DIR/counterfactual"
-          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"             --detector semantic_guard
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"             --detector patef
 
-      - name: Validate real A-B-A evidence
+      - name: Validate real A-B-A evidence and report detector transfer
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
 
+          import pandas as pd
+
           root = Path("artifacts/open5gs-failover")
           evidence = json.loads((root / "evidence-summary.json").read_text())
-          control = json.loads((root / "real" / "control-summary.json").read_text())
+          semantic_real = json.loads(
+              (root / "real" / "control-summary-semantic_guard.json").read_text()
+          )
+          patef_real = json.loads(
+              (root / "real" / "control-summary-patef.json").read_text()
+          )
 
-          import pandas as pd
           counter_obs = pd.read_csv(root / "counterfactual-observations.csv")
-          counter_scores = pd.read_csv(root / "counterfactual" / "control-scores.csv")
-          counter_summary = json.loads(
-              (root / "counterfactual" / "control-summary.json").read_text()
+          semantic_scores = pd.read_csv(
+              root / "counterfactual" / "control-scores-semantic_guard.csv"
+          )
+          patef_scores = pd.read_csv(
+              root / "counterfactual" / "control-scores-patef.csv"
+          )
+          semantic_counter = json.loads(
+              (
+                  root
+                  / "counterfactual"
+                  / "control-summary-semantic_guard.json"
+              ).read_text()
+          )
+          patef_counter = json.loads(
+              (root / "counterfactual" / "control-summary-patef.json").read_text()
           )
 
           a = evidence["udm_a"]
@@ -132,34 +153,53 @@ jobs:
           assert evidence["recovery_nrf"] == [a], evidence
           assert evidence["recovery_ausf"] == [a], evidence
           assert evidence["recovery_route"] == [a], evidence
-          assert control["alerts"] == 0, control
+
+          # Gating assertions are about the validity of the real benign lab.
+          assert semantic_real["alerts"] == 0, semantic_real
+          assert patef_real["alerts"] == 0, patef_real
 
           attack = counter_obs["attack_active"].astype(bool).to_numpy()
-          alerts = counter_scores["alert"].astype(bool).to_numpy()
-          attack_alerts = int(alerts[attack].sum())
-          benign_alerts = int(alerts[~attack].sum())
-          recall = float(alerts[attack].mean())
-          fpr = float(alerts[~attack].mean())
+          assert attack.any(), "counterfactual replay contains no attack samples"
 
-          assert attack_alerts >= 1, counter_summary
-          assert benign_alerts == 0, counter_summary
+          def summarize(name, scores, summary):
+              alerts = scores["alert"].astype(bool).to_numpy()
+              attack_alerts = int(alerts[attack].sum())
+              benign_alerts = int(alerts[~attack].sum())
+              recall = float(alerts[attack].mean())
+              fpr = float(alerts[~attack].mean())
+              return {
+                  "detector": name,
+                  "attack_samples": int(attack.sum()),
+                  "attack_alerts": attack_alerts,
+                  "benign_samples": int((~attack).sum()),
+                  "benign_alerts": benign_alerts,
+                  "recall": recall,
+                  "fpr": fpr,
+                  "threshold": summary["threshold"],
+                  "max_risk": summary["max_risk"],
+                  "meets_external_target": bool(
+                      recall == 1.0 and fpr <= summary["target_fpr"]
+                  ),
+              }
 
           result = {
-              "attack_samples": int(attack.sum()),
-              "attack_alerts": attack_alerts,
-              "benign_samples": int((~attack).sum()),
-              "benign_alerts": benign_alerts,
-              "recall": recall,
-              "fpr": fpr,
-              "threshold": counter_summary["threshold"],
-              "max_risk": counter_summary["max_risk"],
+              "target_fpr": semantic_counter["target_fpr"],
+              "semantic_guard": summarize(
+                  "semantic_guard", semantic_scores, semantic_counter
+              ),
+              "patef": summarize("patef", patef_scores, patef_counter),
           }
+          result["any_detector_meets_external_target"] = bool(
+              result["semantic_guard"]["meets_external_target"]
+              or result["patef"]["meets_external_target"]
+          )
           (root / "counterfactual-result.json").write_text(
               json.dumps(result, indent=2)
           )
 
           print(json.dumps(evidence, indent=2))
-          print(json.dumps(control, indent=2))
+          print(json.dumps(semantic_real, indent=2))
+          print(json.dumps(patef_real, indent=2))
           print(json.dumps(result, indent=2))
           PY
 

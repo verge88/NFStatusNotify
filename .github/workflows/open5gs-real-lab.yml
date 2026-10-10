@@ -8,6 +8,7 @@ on:
       - lab/open5gs-real-observations
       - research/patef-specialized-detector
       - research/scenario-disjoint-evaluation
+      - research/external-control-semantic_guard
     paths:
       - ".github/workflows/open5gs-real-lab.yml"
       - "scripts/open5gs_real_lab.py"
@@ -114,7 +115,8 @@ jobs:
 
           python -m pip install -e .
           nfnotify-lab ingest             --observations "$LAB_DIR/observations.csv"             --out "$LAB_DIR/derived"
-          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/derived"
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/derived"             --detector semantic_guard
+          nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/derived"             --detector patef
 
       - name: Validate real NFStatusNotify evidence
         run: |
@@ -131,18 +133,38 @@ jobs:
           semantic = (root / "semantic-evidence.log").read_text(errors="replace")
           assert "(NRF-notify)" in semantic, semantic
 
-          control = json.loads((root / "derived" / "control-summary.json").read_text())
-          assert control["alerts"] == 0, control
+          semantic_guard = json.loads(
+              (
+                  root
+                  / "derived"
+                  / "control-summary-semantic_guard.json"
+              ).read_text()
+          )
+          patef = json.loads(
+              (root / "derived" / "control-summary-patef.json").read_text()
+          )
+          assert semantic_guard["alerts"] == 0, semantic_guard
+          assert patef["alerts"] == 0, patef
 
           print(json.dumps(summary, indent=2))
-          print(json.dumps(control, indent=2))
+          print(json.dumps(semantic_guard, indent=2))
+          print(json.dumps(patef, indent=2))
           with open(Path.cwd() / "lab-summary.md", "w", encoding="utf-8") as f:
               f.write("## Open5GS real lab\n\n")
               f.write(f"- NFStatusNotify frames: {summary['notification_frames']}\n")
-              f.write(f"- Trusted NRF → AUSF frames: {summary['trusted_nrf_to_ausf_frames']}\n")
+              f.write(
+                  "- Trusted NRF → AUSF frames: "
+                  f"{summary['trusted_nrf_to_ausf_frames']}\n"
+              )
               f.write("- Scenario: legitimate UDM stop/restart (no forged payload)\n")
-              f.write(f"- PA-TEF benign-control alerts: {control['alerts']}\n")
-              f.write(f"- PA-TEF max benign risk: {control['max_risk']:.6g}\n")
+              f.write(
+                  "- semantic_guard benign-control alerts: "
+                  f"{semantic_guard['alerts']}\n"
+              )
+              f.write(
+                  "- PA-TEF benign-control alerts: "
+                  f"{patef['alerts']}\n"
+              )
           PY
           cat lab-summary.md >> "$GITHUB_STEP_SUMMARY"
 
