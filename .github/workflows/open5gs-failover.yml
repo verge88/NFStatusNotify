@@ -16,11 +16,13 @@ on:
       - research/source-shift-preregistered
       - research/freshness-eventtime-v1
       - research/causal-recovery-context-v1
+      - research/real-source-time-audit-v1
     paths:
       - ".github/workflows/open5gs-failover.yml"
       - "lab/open5gs/udm-b.yaml"
       - "scripts/open5gs_failover_lab.py"
       - "scripts/enrich_failover_observations.py"
+      - "scripts/real_source_provenance_audit.py"
       - "src/nfnotify_lab/**"
       - "scripts/patef_v2_real_ablation.py"
 
@@ -123,6 +125,19 @@ jobs:
           nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"             --detector patef
 
           python scripts/patef_v2_real_ablation.py --root "$LAB_DIR"
+
+      - name: Audit independently measured source timing (stage 5)
+        run: |
+          set -euxo pipefail
+          python scripts/real_source_provenance_audit.py \
+            --observations "$LAB_DIR/observations.csv" \
+            --polls "$LAB_DIR/nrf-observer-polls.jsonl" \
+            --routes "$LAB_DIR/routes.tsv" \
+            --notifications "$LAB_DIR/notifications.tsv" \
+            --ausf-log "$LAB_DIR/logs/ausf.log" \
+            --meta "$LAB_DIR/failover-meta.json" \
+            --out "$LAB_DIR/real-provenance-audit"
+          cat "$LAB_DIR/real-provenance-audit/source-time-decision.json"
 
       - name: Validate real A-B-A evidence and report detector transfer
         run: |
