@@ -1,0 +1,59 @@
+name: Event-time freshness causal study
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/freshness-eventtime-v1
+    paths:
+      - ".github/workflows/freshness-eventtime.yml"
+      - "src/nfnotify_lab/freshness.py"
+      - "scripts/freshness_eventtime_study.py"
+      - "tests/test_freshness.py"
+      - "docs/freshness-eventtime-protocol.md"
+      - "src/nfnotify_lab/**"
+
+permissions:
+  contents: read
+
+jobs:
+  event-time:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install and enforce feature-level tests
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          ruff check src tests
+          python -m pytest -q tests/test_freshness.py
+      - name: Execute frozen oracle source-time alignment study
+        run: |
+          python scripts/freshness_eventtime_study.py \
+            --out artifacts/freshness-eventtime \
+            --train-seeds 60 \
+            --test-first-seed 100 \
+            --test-seeds 40 \
+            --steps 90 \
+            --random-state 42
+      - name: Print locked interpretation and version
+        if: always()
+        run: |
+          git rev-parse HEAD
+          python --version
+          if [ -f artifacts/freshness-eventtime/freshness-decision.json ]; then
+            cat artifacts/freshness-eventtime/freshness-decision.json
+          fi
+          if [ -f artifacts/freshness-eventtime/freshness-summary.csv ]; then
+            cat artifacts/freshness-eventtime/freshness-summary.csv
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: event-time-freshness-${{ github.run_id }}
+          path: artifacts/freshness-eventtime/
+          retention-days: 45
