@@ -11,6 +11,8 @@ on:
     paths:
       - ".github/workflows/patef-benchmark.yml"
       - "src/nfnotify_lab/**"
+      - "tests/test_holdout.py"
+      - "tests/test_smoke.py"
       - "configs/patef-benchmark.yaml"
       - "pyproject.toml"
 

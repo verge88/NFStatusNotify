@@ -104,6 +104,25 @@ The real Open5GS GitHub Actions recovery scenario is also scored as an external
 benign control. The later A→B→A failover experiment additionally records real
 NRF state, AUSF cache evidence and the actual UDM route.
 
+## Current hypothesis result
+
+On the fixed 60-seed benchmark at target FPR 0.1%, the standalone
+`semantic_guard` and PA-TEF produce identical decisions:
+
+- ordinary run-level split: FPR 0 and Recall 1.0 for both;
+- scenario-disjoint holdout: pooled FPR 0.000032 and Recall 1.0 for both;
+- worst unseen benign-scenario FPR: 0.000185 for both;
+- the no-NRF ablation is also identical and remains the main weakness
+  (Recall 0.069818).
+
+Accordingly, `hypothesis-check.json` reports
+`scenario_disjoint_ml_advantage_observed: false`. The present evidence does
+**not** support claiming that learned evidence fusion improves detection beyond
+the specialized deterministic semantics. PA-TEF remains useful as an
+experimental comparator, but the current deployable candidate should be treated
+as the semantic guard unless a later dataset demonstrates reproducible
+incremental value from ML.
+
 ## Scientific interpretation
 
 The current PA-TEF implementation is a specialized research method, not by
