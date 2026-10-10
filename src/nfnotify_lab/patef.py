@@ -8,10 +8,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GroupKFold
 from sklearn.pipeline import Pipeline
 
-from .consensus import (
-    SINGLE_SOURCE_PERSISTENCE_STEPS,
-    consensus_attack_support,
-)
+from .consensus import consensus_attack_support
 from .temporal import add_temporal_features
 
 
@@ -101,6 +98,10 @@ EXPERT_FEATURES: dict[str, tuple[str, ...]] = {
     ),
 }
 
+PA_TEF_SINGLE_SOURCE_PERSISTENCE_STEPS = 7
+PA_TEF_DUAL_SOURCE_PERSISTENCE_STEPS = 1
+
+
 META_FEATURES = (
     "p_state",
     "p_notify",
@@ -182,26 +183,18 @@ def semantic_attack_support(x: pd.DataFrame) -> pd.Series:
 
 
 def provenance_normalized_attack_gate(x: pd.DataFrame) -> pd.Series:
-    """Binary semantic gate without a provenance-coverage score ceiling.
+    """Source-symmetric gate that separates evidence eligibility from coverage.
 
-    The original PA-TEF multiplied the learned probability by a continuous
-    semantic support value that itself contained evidence coverage.  Under
-    partial telemetry this capped the maximum attainable risk (for example at
-    0.75), so a calibration threshold learned from fully observed synthetic
-    data could become unreachable on a real trace.
+    The gate is deliberately one sample more permissive than the validated
+    consensus_guard single-source reference: the development benign-skew
+    envelope is six consecutive samples, so a seventh consecutive unexplained
+    single-observer conflict is the first causally distinguishable point for a
+    persistent divergence.  Dual-source conflict remains immediately eligible.
 
-    The v2 gate keeps the provenance requirement but separates *whether*
-    sufficient evidence exists from *how confident* the learned fusion is.
-
-    Full state observations use the independently validated source-consensus
-    semantics.  A partial state view can also become eligible after the same
-    single-source persistence horizon, provided the divergence is unexplained
-    by recovery or a recent NRF transition.  Bad/untrusted notifications remain
-    immediate evidence.
+    This parameter is a PA-TEF development candidate only; it is not taken from
+    real Open5GS attack-like validation and does not modify consensus_guard.
     """
-    consensus = consensus_attack_support(x).fillna(0.0).clip(0.0, 1.0)
     bad_notify = x["recent_bad_notify_seen_6"].fillna(0.0).clip(0.0, 1.0)
-
     recovery = x["recovery_active"].fillna(0.0).clip(0.0, 1.0)
     observed_transition = pd.concat(
         [
@@ -212,18 +205,30 @@ def provenance_normalized_attack_gate(x: pd.DataFrame) -> pd.Series:
     ).max(axis=1)
     transition_block = np.maximum(recovery, observed_transition)
 
+    dual_ready = (
+        x["dual_source_conflict_persist"].fillna(0.0)
+        >= PA_TEF_DUAL_SOURCE_PERSISTENCE_STEPS
+    ).astype(float)
+    single_ready = (
+        x["single_source_conflict_persist"].fillna(0.0)
+        >= PA_TEF_SINGLE_SOURCE_PERSISTENCE_STEPS
+    ).astype(float)
+    full_state_support = np.maximum(dual_ready, single_ready) * (
+        1.0 - transition_block
+    )
+
     partial_state_view = x["state_pair_available_count"].fillna(0.0).eq(1.0)
     persistent_partial_conflict = (
         partial_state_view
         & x["state_conflict"].fillna(0.0).gt(0.0)
         & x["state_conflict_persist"]
         .fillna(0.0)
-        .ge(SINGLE_SOURCE_PERSISTENCE_STEPS)
+        .ge(PA_TEF_SINGLE_SOURCE_PERSISTENCE_STEPS)
     ).astype(float)
     partial_support = persistent_partial_conflict * (1.0 - transition_block)
 
     return pd.concat(
-        [consensus, bad_notify, partial_support],
+        [bad_notify, full_state_support, partial_support],
         axis=1,
     ).max(axis=1).clip(0.0, 1.0)
 
