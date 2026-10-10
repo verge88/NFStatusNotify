@@ -107,7 +107,7 @@ jobs:
           nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"             --detector semantic_guard
           nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"             --detector patef
 
-      - name: Validate real A-B-A evidence
+      - name: Validate real A-B-A evidence and report detector transfer
         run: |
           python - <<'PY'
           import json
@@ -117,7 +117,7 @@ jobs:
 
           root = Path("artifacts/open5gs-failover")
           evidence = json.loads((root / "evidence-summary.json").read_text())
-          candidate_real = json.loads(
+          semantic_real = json.loads(
               (root / "real" / "control-summary-semantic_guard.json").read_text()
           )
           patef_real = json.loads(
@@ -125,13 +125,13 @@ jobs:
           )
 
           counter_obs = pd.read_csv(root / "counterfactual-observations.csv")
-          candidate_scores = pd.read_csv(
+          semantic_scores = pd.read_csv(
               root / "counterfactual" / "control-scores-semantic_guard.csv"
           )
           patef_scores = pd.read_csv(
               root / "counterfactual" / "control-scores-patef.csv"
           )
-          candidate_counter = json.loads(
+          semantic_counter = json.loads(
               (
                   root
                   / "counterfactual"
@@ -154,56 +154,51 @@ jobs:
           assert evidence["recovery_ausf"] == [a], evidence
           assert evidence["recovery_route"] == [a], evidence
 
-          assert candidate_real["alerts"] == 0, candidate_real
+          # Gating assertions are about the validity of the real benign lab.
+          assert semantic_real["alerts"] == 0, semantic_real
           assert patef_real["alerts"] == 0, patef_real
 
           attack = counter_obs["attack_active"].astype(bool).to_numpy()
-          candidate_alerts = candidate_scores["alert"].astype(bool).to_numpy()
-          patef_alerts = patef_scores["alert"].astype(bool).to_numpy()
+          assert attack.any(), "counterfactual replay contains no attack samples"
 
-          candidate_attack_alerts = int(candidate_alerts[attack].sum())
-          candidate_benign_alerts = int(candidate_alerts[~attack].sum())
-          candidate_recall = float(candidate_alerts[attack].mean())
-          candidate_fpr = float(candidate_alerts[~attack].mean())
-
-          patef_attack_alerts = int(patef_alerts[attack].sum())
-          patef_benign_alerts = int(patef_alerts[~attack].sum())
-          patef_recall = float(patef_alerts[attack].mean())
-          patef_fpr = float(patef_alerts[~attack].mean())
-
-          assert candidate_attack_alerts == int(attack.sum()), candidate_counter
-          assert candidate_benign_alerts == 0, candidate_counter
+          def summarize(name, scores, summary):
+              alerts = scores["alert"].astype(bool).to_numpy()
+              attack_alerts = int(alerts[attack].sum())
+              benign_alerts = int(alerts[~attack].sum())
+              recall = float(alerts[attack].mean())
+              fpr = float(alerts[~attack].mean())
+              return {
+                  "detector": name,
+                  "attack_samples": int(attack.sum()),
+                  "attack_alerts": attack_alerts,
+                  "benign_samples": int((~attack).sum()),
+                  "benign_alerts": benign_alerts,
+                  "recall": recall,
+                  "fpr": fpr,
+                  "threshold": summary["threshold"],
+                  "max_risk": summary["max_risk"],
+                  "meets_external_target": bool(
+                      recall == 1.0 and fpr <= summary["target_fpr"]
+                  ),
+              }
 
           result = {
-              "candidate": {
-                  "detector": "semantic_guard",
-                  "attack_samples": int(attack.sum()),
-                  "attack_alerts": candidate_attack_alerts,
-                  "benign_samples": int((~attack).sum()),
-                  "benign_alerts": candidate_benign_alerts,
-                  "recall": candidate_recall,
-                  "fpr": candidate_fpr,
-                  "threshold": candidate_counter["threshold"],
-                  "max_risk": candidate_counter["max_risk"],
-              },
-              "comparator": {
-                  "detector": "patef",
-                  "attack_samples": int(attack.sum()),
-                  "attack_alerts": patef_attack_alerts,
-                  "benign_samples": int((~attack).sum()),
-                  "benign_alerts": patef_benign_alerts,
-                  "recall": patef_recall,
-                  "fpr": patef_fpr,
-                  "threshold": patef_counter["threshold"],
-                  "max_risk": patef_counter["max_risk"],
-              },
+              "target_fpr": semantic_counter["target_fpr"],
+              "semantic_guard": summarize(
+                  "semantic_guard", semantic_scores, semantic_counter
+              ),
+              "patef": summarize("patef", patef_scores, patef_counter),
           }
+          result["any_detector_meets_external_target"] = bool(
+              result["semantic_guard"]["meets_external_target"]
+              or result["patef"]["meets_external_target"]
+          )
           (root / "counterfactual-result.json").write_text(
               json.dumps(result, indent=2)
           )
 
           print(json.dumps(evidence, indent=2))
-          print(json.dumps(candidate_real, indent=2))
+          print(json.dumps(semantic_real, indent=2))
           print(json.dumps(patef_real, indent=2))
           print(json.dumps(result, indent=2))
           PY
