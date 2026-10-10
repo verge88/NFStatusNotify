@@ -28,6 +28,101 @@ def _external_report(detector, control_features: pd.DataFrame) -> pd.DataFrame:
     return report
 
 
+def summarize_external_replay(
+    detector_name: str,
+    observations: pd.DataFrame,
+    scores: pd.DataFrame,
+    summary: dict[str, object],
+) -> dict[str, object]:
+    """Summarize per-sample and per-run detection on an external replay.
+
+    The strict sample-level target is preserved for comparability. Run-level
+    detection and delay are reported separately so persistence-based detectors
+    are not misinterpreted as missing an entire episode when they intentionally
+    wait for repeated evidence.
+    """
+    if len(observations) != len(scores):
+        raise ValueError("observations and scores must have identical row counts")
+    if "attack_active" not in observations or "alert" not in scores:
+        raise ValueError("external replay requires attack_active and alert columns")
+
+    attack = observations["attack_active"].astype(bool).to_numpy()
+    alerts = scores["alert"].astype(bool).to_numpy()
+    benign = ~attack
+    attack_alerts = int(alerts[attack].sum())
+    benign_alerts = int(alerts[benign].sum())
+    recall = float(alerts[attack].mean()) if attack.any() else float("nan")
+    fpr = float(alerts[benign].mean()) if benign.any() else float("nan")
+
+    tmp = pd.DataFrame(
+        {
+            "run_id": (
+                observations["run_id"].astype(str).to_numpy()
+                if "run_id" in observations
+                else ["external-run"] * len(observations)
+            ),
+            "t": observations["t"].to_numpy(),
+            "attack_active": attack,
+            "alert": alerts,
+        }
+    )
+    if "attack_start" in observations:
+        tmp["attack_start"] = observations["attack_start"].to_numpy()
+    else:
+        tmp["attack_start"] = -1
+
+    delays: list[float] = []
+    total_attack_runs = 0
+    detected_attack_runs = 0
+    for _, group in tmp.groupby("run_id", sort=False):
+        active = group.loc[group["attack_active"]]
+        if active.empty:
+            continue
+        total_attack_runs += 1
+
+        declared = pd.to_numeric(group["attack_start"], errors="coerce")
+        declared = declared.loc[declared >= 0]
+        attack_start = (
+            float(declared.iloc[0])
+            if len(declared)
+            else float(active["t"].min())
+        )
+        after = group.loc[(group["t"] >= attack_start) & group["alert"]]
+        if len(after):
+            detected_attack_runs += 1
+            delays.append(float(after.iloc[0]["t"] - attack_start))
+
+    detection_rate = (
+        detected_attack_runs / total_attack_runs
+        if total_attack_runs
+        else float("nan")
+    )
+    median_delay = float(pd.Series(delays).median()) if delays else None
+    target_fpr = float(summary["target_fpr"])
+
+    return {
+        "detector": detector_name,
+        "attack_samples": int(attack.sum()),
+        "attack_alerts": attack_alerts,
+        "benign_samples": int(benign.sum()),
+        "benign_alerts": benign_alerts,
+        "recall": recall,
+        "fpr": fpr,
+        "threshold": float(summary["threshold"]),
+        "max_risk": float(summary["max_risk"]),
+        "meets_external_target": bool(recall == 1.0 and fpr <= target_fpr),
+        "detected_attack_runs": detected_attack_runs,
+        "total_attack_runs": total_attack_runs,
+        "attack_run_detection_rate": detection_rate,
+        "median_detection_delay": median_delay,
+        "meets_run_detection_target": bool(
+            total_attack_runs > 0
+            and detected_attack_runs == total_attack_runs
+            and fpr <= target_fpr
+        ),
+    }
+
+
 def score_benign_control(
     control_features: pd.DataFrame,
     out_dir: Path,

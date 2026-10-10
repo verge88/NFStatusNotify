@@ -9,6 +9,7 @@ on:
       - research/scenario-disjoint-evaluation
       - research/external-control-candidate
       - research/real-consensus-control
+      - research/external-delay-metrics
     paths:
       - ".github/workflows/open5gs-failover.yml"
       - "lab/open5gs/udm-b.yaml"
@@ -118,6 +119,8 @@ jobs:
 
           import pandas as pd
 
+          from nfnotify_lab.control import summarize_external_replay
+
           root = Path("artifacts/open5gs-failover")
           evidence = json.loads((root / "evidence-summary.json").read_text())
           semantic_real = json.loads(
@@ -178,36 +181,26 @@ jobs:
           attack = counter_obs["attack_active"].astype(bool).to_numpy()
           assert attack.any(), "counterfactual replay contains no attack samples"
 
-          def summarize(name, scores, summary):
-              alerts = scores["alert"].astype(bool).to_numpy()
-              attack_alerts = int(alerts[attack].sum())
-              benign_alerts = int(alerts[~attack].sum())
-              recall = float(alerts[attack].mean())
-              fpr = float(alerts[~attack].mean())
-              return {
-                  "detector": name,
-                  "attack_samples": int(attack.sum()),
-                  "attack_alerts": attack_alerts,
-                  "benign_samples": int((~attack).sum()),
-                  "benign_alerts": benign_alerts,
-                  "recall": recall,
-                  "fpr": fpr,
-                  "threshold": summary["threshold"],
-                  "max_risk": summary["max_risk"],
-                  "meets_external_target": bool(
-                      recall == 1.0 and fpr <= summary["target_fpr"]
-                  ),
-              }
-
           result = {
               "target_fpr": semantic_counter["target_fpr"],
-              "semantic_guard": summarize(
-                  "semantic_guard", semantic_scores, semantic_counter
+              "semantic_guard": summarize_external_replay(
+                  "semantic_guard",
+                  counter_obs,
+                  semantic_scores,
+                  semantic_counter,
               ),
-              "consensus_guard": summarize(
-                  "consensus_guard", consensus_scores, consensus_counter
+              "consensus_guard": summarize_external_replay(
+                  "consensus_guard",
+                  counter_obs,
+                  consensus_scores,
+                  consensus_counter,
               ),
-              "patef": summarize("patef", patef_scores, patef_counter),
+              "patef": summarize_external_replay(
+                  "patef",
+                  counter_obs,
+                  patef_scores,
+                  patef_counter,
+              ),
           }
           result["any_detector_meets_external_target"] = bool(
               result["semantic_guard"]["meets_external_target"]
