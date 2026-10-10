@@ -10,7 +10,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from .features import MODEL_FEATURES, model_matrix
-from .patef import ProvenanceAwareTemporalEvidenceFusion
+from .patef import ProvenanceAwareTemporalEvidenceFusion, semantic_attack_support
 
 
 @dataclass
@@ -107,13 +107,29 @@ class ProvenanceAwareDetector:
         return self.model.predict_proba(model_matrix(x))[:, 1]
 
 
+
+@dataclass
+class SemanticGuardDetector:
+    """Deterministic version of PA-TEF's domain-semantic evidence gate."""
+
+    def fit(
+        self, x: pd.DataFrame, y: pd.Series | None = None
+    ) -> SemanticGuardDetector:
+        return self
+
+    def score_samples(self, x: pd.DataFrame) -> np.ndarray:
+        return semantic_attack_support(x).to_numpy(dtype=float)
+
+
 def detector_names() -> tuple[str, ...]:
-    return ("rules", "isolation_forest", "provenance_aware", "patef")
+    return ("rules", "semantic_guard", "isolation_forest", "provenance_aware", "patef")
 
 
 def build_detector(name: str, random_state: int = 0):
     if name == "rules":
         return RuleDetector()
+    if name == "semantic_guard":
+        return SemanticGuardDetector()
     if name == "isolation_forest":
         return IsolationForestDetector(random_state=random_state)
     if name == "provenance_aware":

@@ -60,6 +60,22 @@ scenario template. It was added after scenario-disjoint validation showed that
 a purely learned fusion over-alerted on previously unseen delayed updates,
 missing telemetry and recovery windows.
 
+## Fair deterministic baseline
+
+The semantic transition guard is also exposed as the standalone
+`semantic_guard` detector. It uses exactly the same `semantic_attack_support()`
+signal as PA-TEF but contains no learned expert or fusion model.
+
+This comparison is mandatory for interpreting the research hypothesis. If
+PA-TEF and `semantic_guard` have the same recall/FPR under scenario-disjoint
+evaluation, the observed gain comes from the domain semantics rather than from
+ML. That is a valid negative result: the detector should then remain primarily
+deterministic unless later experiments show a reproducible ML increment.
+
+The benchmark writes the PA-TEF minus semantic-guard recall/FPR deltas to
+`hypothesis-check.json`; hypothesis status is reported but is not used to make
+CI pass or fail.
+
 ## Output
 
 `risk_report()` returns:

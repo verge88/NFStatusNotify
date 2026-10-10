@@ -9,6 +9,7 @@ def test_end_to_end_smoke():
     result = evaluate_all(features, target_fpr=0.01, random_state=7)
     assert set(result["detector"]) == {
         "rules",
+        "semantic_guard",
         "isolation_forest",
         "provenance_aware",
         "patef",
