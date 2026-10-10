@@ -13,6 +13,7 @@ on:
       - research/promote-consensus-1-8
       - research/patef-v2-provenance-normalized
       - research/patef-v2-gate-ablation
+      - research/source-shift-preregistered
     paths:
       - ".github/workflows/open5gs-failover.yml"
       - "lab/open5gs/udm-b.yaml"
