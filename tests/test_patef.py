@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 from nfnotify_lab.evaluate import evaluate_all
-from nfnotify_lab.patef import EXPERT_FEATURES, provenance_normalized_attack_gate
+from nfnotify_lab.patef import provenance_normalized_attack_gate
 from nfnotify_lab.features import build_features
 from nfnotify_lab.simulator import (
     DEFAULT_SCENARIOS,
@@ -82,16 +82,18 @@ def test_patef_v2_partial_state_waits_for_persistence():
     assert gate.loc[first_ready] == 1.0
 
 
-def test_patef_state_expert_is_source_symmetric():
-    columns = set(EXPERT_FEATURES["state"])
-    source_specific = {
-        "delta_nrf_ausf",
-        "delta_route",
-        "cache_conflict_persist",
-        "route_conflict_persist",
-        "prov_nrf_ausf",
-        "prov_route",
-        "m_ausf",
-        "m_route",
-    }
-    assert columns.isdisjoint(source_specific)
+def test_patef_v2_gate_is_source_symmetric():
+    cache_skew = next(
+        s for s in DEFAULT_SCENARIOS if s.name == "cache_observer_skew"
+    )
+    route_skew = next(
+        s for s in DEFAULT_SCENARIOS if s.name == "route_observer_skew"
+    )
+    cache_gate = provenance_normalized_attack_gate(
+        build_features(simulate_run(cache_skew, seed=0, steps=50))
+    )
+    route_gate = provenance_normalized_attack_gate(
+        build_features(simulate_run(route_skew, seed=0, steps=50))
+    )
+
+    assert cache_gate.tolist() == route_gate.tolist()
