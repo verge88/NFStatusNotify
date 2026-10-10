@@ -10,12 +10,14 @@ on:
       - research/semantic-guard-baseline
       - research/leak-free-ablations
       - research/hard-generalization-scenarios
+      - research/calibration-transfer-diagnostics
     paths:
       - ".github/workflows/patef-benchmark.yml"
       - "src/nfnotify_lab/**"
       - "tests/test_holdout.py"
       - "tests/test_smoke.py"
       - "tests/test_hard_scenarios.py"
+      - "tests/test_diagnostics.py"
       - "configs/patef-benchmark.yaml"
       - "pyproject.toml"
 
@@ -47,6 +49,13 @@ jobs:
           root = Path("artifacts/patef-benchmark")
           metrics = pd.read_csv(root / "metrics.csv")
           holdout = pd.read_csv(root / "scenario-holdout-summary.csv")
+          calibration = pd.read_csv(root / "calibration-diagnostics.csv")
+          calibration_ties = pd.read_csv(
+              root / "calibration-max-score-ties.csv"
+          )
+          risk_register = pd.read_csv(
+              root / "generalization-risk-register.csv"
+          )
           patef = metrics.loc[metrics["detector"] == "patef"].iloc[0]
           patef_holdout = holdout.loc[holdout["detector"] == "patef"].iloc[0]
           semantic = metrics.loc[metrics["detector"] == "semantic_guard"].iloc[0]
@@ -80,6 +89,37 @@ jobs:
           semantic_scenario_recall = float(
               semantic_holdout["unseen_attack_recall"]
           )
+          semantic_cal = calibration.loc[
+              calibration["detector"] == "semantic_guard"
+          ].iloc[0]
+          patef_cal = calibration.loc[
+              calibration["detector"] == "patef"
+          ].iloc[0]
+          patef_risk = risk_register.loc[
+              (risk_register["detector"] == "patef")
+              & risk_register["exceeds_target_fpr"].astype(bool)
+          ].copy()
+          top_patef_risks = [
+              {
+                  "scenario": row.heldout_scenario,
+                  "fpr": float(row.fpr),
+                  "fpr_ratio_to_target": float(row.fpr_ratio_to_target),
+              }
+              for row in patef_risk.head(5).itertuples(index=False)
+          ]
+          semantic_ties = calibration_ties.loc[
+              calibration_ties["detector"] == "semantic_guard"
+          ].sort_values("max_score_ties", ascending=False)
+          top_semantic_ties = [
+              {
+                  "scenario": row.scenario,
+                  "max_score_ties": int(row.max_score_ties),
+                  "share_of_all_max_score_ties": float(
+                      row.share_of_all_max_score_ties
+                  ),
+              }
+              for row in semantic_ties.head(5).itertuples(index=False)
+          ]
 
           hypothesis = {
               "target_fpr": target_fpr,
@@ -109,6 +149,36 @@ jobs:
           }
           (root / "hypothesis-check.json").write_text(
               json.dumps(hypothesis, indent=2), encoding="utf-8"
+          )
+
+          transfer = {
+              "target_fpr": target_fpr,
+              "semantic_guard_calibration": {
+                  "threshold": float(semantic_cal["calibration_threshold"]),
+                  "benign_max_score": float(semantic_cal["benign_max_score"]),
+                  "max_score_tie_count": int(
+                      semantic_cal["max_score_tie_count"]
+                  ),
+                  "max_score_tie_rate": float(
+                      semantic_cal["max_score_tie_rate"]
+                  ),
+                  "threshold_above_benign_max": bool(
+                      semantic_cal["threshold_above_benign_max"]
+                  ),
+                  "top_max_score_tie_scenarios": top_semantic_ties,
+              },
+              "patef_calibration": {
+                  "threshold": float(patef_cal["calibration_threshold"]),
+                  "benign_max_score": float(patef_cal["benign_max_score"]),
+                  "max_score_tie_count": int(
+                      patef_cal["max_score_tie_count"]
+                  ),
+                  "max_score_tie_rate": float(patef_cal["max_score_tie_rate"]),
+              },
+              "patef_unseen_benign_risks": top_patef_risks,
+          }
+          (root / "calibration-transfer.json").write_text(
+              json.dumps(transfer, indent=2), encoding="utf-8"
           )
 
           lines = [
@@ -163,12 +233,30 @@ jobs:
                   "- strict dominance vs semantic guard: "
                   f"{hypothesis['scenario_disjoint_strict_dominance_observed']}"
               ),
+              "",
+              "### Calibration / transfer diagnostics",
+              (
+                  "- semantic_guard benign max-score tie rate: "
+                  f"{semantic_cal['max_score_tie_rate']:.6f}"
+              ),
+              (
+                  "- semantic_guard threshold above benign max: "
+                  f"{bool(semantic_cal['threshold_above_benign_max'])}"
+              ),
+              (
+                  "- PA-TEF unseen benign scenarios above target FPR: "
+                  f"{len(patef_risk)}"
+              ),
           ]
           Path("patef-summary.md").write_text("\n".join(lines), encoding="utf-8")
           print(metrics.to_string(index=False))
           print(holdout.to_string(index=False))
           print(patef_detail.to_string(index=False))
+          print(calibration.to_string(index=False))
+          print(semantic_ties.head(10).to_string(index=False))
+          print(patef_risk.head(10).to_string(index=False))
           print(json.dumps(hypothesis, indent=2))
+          print(json.dumps(transfer, indent=2))
           PY
           cat patef-summary.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4

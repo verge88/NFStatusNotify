@@ -8,6 +8,7 @@ import yaml
 
 from .ablation import evaluate_ablations
 from .control import CONTROL_DETECTORS, score_benign_control
+from .diagnostics import calibration_diagnostics, generalization_risk_register
 from .evaluate import (
     evaluate_all,
     evaluate_by_scenario,
@@ -111,6 +112,13 @@ def main() -> None:
             features, target_fpr=target_fpr, random_state=random_state
         )
         scenarios.to_csv(out_dir / "scenario-metrics.csv", index=False)
+        calibration, calibration_ties = calibration_diagnostics(
+            features, target_fpr=target_fpr, random_state=random_state
+        )
+        calibration.to_csv(out_dir / "calibration-diagnostics.csv", index=False)
+        calibration_ties.to_csv(
+            out_dir / "calibration-max-score-ties.csv", index=False
+        )
         print(metrics.to_string(index=False))
 
     if args.command in {"ablate", "all"}:
@@ -132,6 +140,12 @@ def main() -> None:
         holdout.to_csv(out_dir / "scenario-holdout.csv", index=False)
         holdout_summary = summarize_scenario_holdout(holdout)
         holdout_summary.to_csv(out_dir / "scenario-holdout-summary.csv", index=False)
+        risk_register = generalization_risk_register(
+            holdout, target_fpr=target_fpr
+        )
+        risk_register.to_csv(
+            out_dir / "generalization-risk-register.csv", index=False
+        )
         print(holdout_summary.to_string(index=False))
 
     if args.command == "score-control":
