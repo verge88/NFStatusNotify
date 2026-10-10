@@ -143,6 +143,43 @@ samples соответствуют **1/1 обнаруженному attack run**
 Этот результат является evidence в пользу дальнейшего исследования, а не claim
 о deployable detector.
 
+## Независимые real-replicates
+
+Для оценки межзапускового разброса используется отдельная 8-run Open5GS
+matrix. Каждый replicate выполняется на свежем GitHub-hosted runner с новым
+контейнерным 5G Core и новой регистрацией UDM NF instances. Протокол
+baseline → UDM-B failover → UDM-A recovery остаётся фиксированным, поэтому
+разброс отражает воспроизводимость лабораторного процесса и timing/evidence
+extraction, а не изменение сценария.
+
+Для continuous metrics публикуются mean, sample SD, median, IQR, min/max и
+percentile bootstrap 95% CI по replicate-level observations. Для бинарных
+outcome (attack run detected, benign run alert-free, target met) публикуется
+Wilson 95% CI. При n=8 эти интервалы интерпретируются как exploratory
+uncertainty estimates, а не как population-level production guarantee.
+
+Detector alert не делает replicate невалидным и не исключается из статистики.
+Исключение допускается только при повреждённой/неполной реальной evidence
+последовательности NRF/AUSF/route. Aggregate job требует минимум 6 валидных
+запусков из 8. Полная методика описана в
+`docs/replicated-real-study.md`.
+
+### Replicated real result
+
+Run `38055330313` produced 8/8 valid fresh Open5GS instantiations with
+16/16 unique UDM NF instance IDs. `consensus_guard` reproduced sample recall
+0.8, FPR 0, attack-run detection 8/8 and median detection delay 1 sample in
+every run; both `semantic_guard` and PA-TEF detected 0/8 attack runs at their
+low-FPR thresholds. All three methods produced zero benign alerts in all eight
+real failover traces.
+
+The Wilson 95% CI for the observed `consensus_guard` attack-run detection
+proportion 8/8 is [0.6756, 1.0000]. Detector-level replicate variance is zero
+under this fixed protocol, while failover duration has mean 27.229 s and
+SD 1.041 s and total experiment duration has mean 59.892 s and SD 1.846 s.
+The complete dispersion table and bootstrap intervals are documented in
+`docs/replicated-real-study.md`.
+
 ## Source-consensus hypothesis
 
 Calibration diagnostics показывают, что max-score benign ties у
