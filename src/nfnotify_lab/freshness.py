@@ -1,10 +1,10 @@
-from __future__ import annotations
-
 """Experimental oracle event-time provenance, NOT production Open5GS telemetry.
 
 Each synthetic observation carries a trusted source-acquisition *logical tick*.
 Only a snapshot observed at that exact tick may be used as an NRF comparator.
 """
+
+from __future__ import annotations
 
 import numpy as np
 import pandas as pd
