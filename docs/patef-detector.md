@@ -139,6 +139,30 @@ freshness observation, a short but real single-source divergence is
 information-theoretically difficult to distinguish online from a stale
 single-source observer snapshot before enough persistence accumulates.
 
+## Real failover counterfactual outcome
+
+The harder 12-scenario calibration changes the interpretation of the real
+Open5GS A→B→A experiment. On merge commit `b40c7b6a`, the real benign
+failover remained clean: 11 observations produced zero alerts. The
+real-derived counterfactual, however, was **not detected**:
+
+- calibrated threshold: `0.7546268627`;
+- counterfactual maximum risk: `0.7496631452`;
+- margin to threshold: approximately `-0.004964`;
+- attack-window alerts: `0/5`.
+
+This miss is retained as a research result rather than used to retune the
+threshold on the test trace. The real failover workflow therefore treats
+evidence integrity and benign false alerts as blocking assertions, while
+counterfactual detection is recorded in `counterfactual-result.json` with
+`detected` and `margin_to_threshold` fields.
+
+This outcome reinforces the current conclusion: the stronger synthetic
+training improves hard-scenario generalization but does not yet satisfy both
+the low-FPR target and the real-derived counterfactual sensitivity
+simultaneously. Source freshness/staleness and independently measured
+observation age are the next provenance signals to investigate.
+
 ## Scientific interpretation
 
 The current PA-TEF implementation remains a research comparator, not a

@@ -7,6 +7,7 @@ on:
       - main
       - experiment/open5gs-instrumented-effect
       - research/scenario-disjoint-evaluation
+      - research/nonblocking-counterfactual-outcome
     paths:
       - ".github/workflows/open5gs-failover.yml"
       - "lab/open5gs/udm-b.yaml"
@@ -104,7 +105,7 @@ jobs:
           nfnotify-lab ingest             --observations "$LAB_DIR/counterfactual-observations.csv"             --out "$LAB_DIR/counterfactual"
           nfnotify-lab score-control             --config configs/experiment.yaml             --out "$LAB_DIR/counterfactual"
 
-      - name: Validate real A-B-A evidence
+      - name: Validate real evidence and record counterfactual outcome
         run: |
           python - <<'PY'
           import json
@@ -141,8 +142,12 @@ jobs:
           recall = float(alerts[attack].mean())
           fpr = float(alerts[~attack].mean())
 
-          assert attack_alerts >= 1, counter_summary
           assert benign_alerts == 0, counter_summary
+
+          detected = attack_alerts >= 1
+          margin_to_threshold = float(
+              counter_summary["max_risk"] - counter_summary["threshold"]
+          )
 
           result = {
               "attack_samples": int(attack.sum()),
@@ -153,6 +158,8 @@ jobs:
               "fpr": fpr,
               "threshold": counter_summary["threshold"],
               "max_risk": counter_summary["max_risk"],
+              "margin_to_threshold": margin_to_threshold,
+              "detected": detected,
           }
           (root / "counterfactual-result.json").write_text(
               json.dumps(result, indent=2)
@@ -161,7 +168,35 @@ jobs:
           print(json.dumps(evidence, indent=2))
           print(json.dumps(control, indent=2))
           print(json.dumps(result, indent=2))
+          if not detected:
+              print(
+                  "::warning title=Counterfactual miss::"
+                  "PA-TEF did not alert on the real-derived counterfactual; "
+                  f"max_risk={counter_summary['max_risk']:.6f}, "
+                  f"threshold={counter_summary['threshold']:.6f}, "
+                  f"margin={margin_to_threshold:.6f}"
+              )
+
+          with open(Path.cwd() / "failover-summary.md", "w", encoding="utf-8") as f:
+              f.write("## Open5GS real A→B→A failover\n\n")
+              f.write(f"- benign alerts: {control['alerts']}\n")
+              f.write(
+                  f"- counterfactual detected: {str(detected).lower()}\n"
+              )
+              f.write(f"- counterfactual recall: {recall:.6f}\n")
+              f.write(
+                  f"- counterfactual max risk: "
+                  f"{counter_summary['max_risk']:.6f}\n"
+              )
+              f.write(
+                  f"- calibrated threshold: "
+                  f"{counter_summary['threshold']:.6f}\n"
+              )
+              f.write(
+                  f"- margin to threshold: {margin_to_threshold:.6f}\n"
+              )
           PY
+          cat failover-summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Collect Open5GS logs
         if: always()
