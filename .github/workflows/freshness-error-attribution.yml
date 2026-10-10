@@ -1,0 +1,36 @@
+name: Post-hoc freshness error attribution
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/freshness-eventtime-v1
+    paths:
+      - ".github/workflows/freshness-error-attribution.yml"
+      - "scripts/freshness_error_attribution.py"
+      - "src/nfnotify_lab/freshness.py"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: pip install -e .
+      - name: Attribute residual errors without any fitting to heldout test
+        run: |
+          python scripts/freshness_error_attribution.py \
+            --out artifacts/freshness-error-attribution
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: freshness-errors-${{ github.run_id }}
+          path: artifacts/freshness-error-attribution/
+          retention-days: 45
