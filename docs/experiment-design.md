@@ -202,6 +202,31 @@ persistent single-source divergence.
 Этот baseline не заменяет `semantic_guard`; оба сохраняются, чтобы можно было
 отделить выигрыш от source-consensus semantics от learned fusion.
 
+## Publication robustness: sensitivity and degraded telemetry
+
+Перед публикацией параметры `consensus_guard` проверяются отдельным
+development-only sweep, а robustness к неполной телеметрии — на новых real
+Open5GS benign traces.
+
+Sensitivity run `38058210231` проверяет single-source persistence
+4/6/8/10/12/16 и dual-source persistence 1/2/3/4 без использования real test
+labels. Reference 2/12 даёт scenario-disjoint FPR 0, recall 0.914 и median
+delay 1. Единственная Pareto-точка в этой сетке — 1/8: FPR 0, recall 0.9491,
+delay 0. Значения single=4/6 приводят к calibration cliff и нулевому attack
+recall при целевом FPR. Поэтому 2/12 считается консервативным reference, а не
+оптимизированной конфигурацией.
+
+Real degradation run `38058506496` включает 4/4 валидных свежих Open5GS
+A→B→A лаборатории и 15 observer-view вариантов на каждый run: полное отсутствие
+источников, burst-loss, AUSF/route lag и notify delay. Underlying real state
+остаётся benign. Для всех 15 вариантов каждый из трёх методов был alert-free
+во всех 4 независимых runs. Для наблюдаемой доли 4/4 Wilson 95% CI составляет
+[0.5101, 1.0000]; 15 views одного run коррелированы и не считаются независимыми
+испытаниями.
+
+Полная методика и интерпретация находятся в
+`docs/publication-robustness.md`.
+
 ## Calibration / transfer diagnostics
 
 Benchmark сохраняет `calibration-diagnostics.csv`,

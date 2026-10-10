@@ -93,6 +93,7 @@ nfnotify-lab all --config configs/experiment.yaml --out artifacts
 - [PA-TEF detector](docs/patef-detector.md)
 - [Scenario-disjoint evaluation](docs/scenario-holdout.md)
 - [Replicated real Open5GS study](docs/replicated-real-study.md)
+- [Publication robustness experiments](docs/publication-robustness.md)
 - [Контракт подключения Open5GS telemetry](adapters/open5gs/README.md)
 
 ## Интеграция с Open5GS
