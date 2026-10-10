@@ -14,6 +14,7 @@ on:
       - research/source-consensus-guard
       - research/promote-consensus-1-8
       - research/patef-v2-provenance-normalized
+      - research/patef-v2-gate-ablation
     paths:
       - ".github/workflows/patef-benchmark.yml"
       - "src/nfnotify_lab/**"
