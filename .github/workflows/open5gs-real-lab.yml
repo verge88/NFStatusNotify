@@ -8,7 +8,7 @@ on:
       - lab/open5gs-real-observations
       - research/patef-specialized-detector
       - research/scenario-disjoint-evaluation
-      - research/external-control-candidate
+      - research/external-control-semantic_guard
     paths:
       - ".github/workflows/open5gs-real-lab.yml"
       - "scripts/open5gs_real_lab.py"
@@ -133,7 +133,7 @@ jobs:
           semantic = (root / "semantic-evidence.log").read_text(errors="replace")
           assert "(NRF-notify)" in semantic, semantic
 
-          candidate = json.loads(
+          semantic_guard = json.loads(
               (
                   root
                   / "derived"
@@ -143,11 +143,11 @@ jobs:
           patef = json.loads(
               (root / "derived" / "control-summary-patef.json").read_text()
           )
-          assert candidate["alerts"] == 0, candidate
+          assert semantic_guard["alerts"] == 0, semantic_guard
           assert patef["alerts"] == 0, patef
 
           print(json.dumps(summary, indent=2))
-          print(json.dumps(candidate, indent=2))
+          print(json.dumps(semantic_guard, indent=2))
           print(json.dumps(patef, indent=2))
           with open(Path.cwd() / "lab-summary.md", "w", encoding="utf-8") as f:
               f.write("## Open5GS real lab\n\n")
@@ -159,7 +159,7 @@ jobs:
               f.write("- Scenario: legitimate UDM stop/restart (no forged payload)\n")
               f.write(
                   "- semantic_guard benign-control alerts: "
-                  f"{candidate['alerts']}\n"
+                  f"{semantic_guard['alerts']}\n"
               )
               f.write(
                   "- PA-TEF benign-control alerts: "
