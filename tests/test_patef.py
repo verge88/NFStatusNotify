@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 
 from nfnotify_lab.evaluate import evaluate_all
+from nfnotify_lab.patef import EXPERT_FEATURES, provenance_normalized_attack_gate
 from nfnotify_lab.features import build_features
 from nfnotify_lab.simulator import (
     DEFAULT_SCENARIOS,
@@ -45,3 +46,52 @@ def test_endpoint_change_recovers_a_missed_update_event():
     assert first_visible_new_endpoint["nrf_endpoint_changed"] == 1.0
     assert first_visible_new_endpoint["recent_nrf_endpoint_changed_12"] == 1.0
     assert first_visible_new_endpoint["trusted_transition"] == 1.0
+
+
+
+def test_patef_v2_gate_suppresses_short_single_observer_skew():
+    skew = next(s for s in DEFAULT_SCENARIOS if s.name == "cache_observer_skew")
+    features = build_features(simulate_run(skew, seed=0, steps=50))
+    gate = provenance_normalized_attack_gate(features)
+
+    skew_window = features["t"].between(30, 35)
+    assert gate.loc[skew_window].eq(0.0).all()
+
+
+def test_patef_v2_gate_accepts_dual_conflict_immediately():
+    attack = next(s for s in DEFAULT_SCENARIOS if s.name == "silent_dual_divergence")
+    features = build_features(simulate_run(attack, seed=0, steps=50))
+    gate = provenance_normalized_attack_gate(features)
+
+    first = features.loc[features["t"] == 35].index[0]
+    assert gate.loc[first] == 1.0
+
+
+def test_patef_v2_partial_state_waits_for_persistence():
+    attack = next(
+        s for s in DEFAULT_SCENARIOS if s.name == "persistent_cache_divergence"
+    )
+    raw = simulate_run(attack, seed=0, steps=50)
+    raw.loc[raw["t"] >= 35, "route_endpoint"] = None
+    raw.loc[raw["t"] >= 35, "m_route"] = 0
+    features = build_features(raw)
+    gate = provenance_normalized_attack_gate(features)
+
+    assert gate.loc[features["t"].between(35, 41)].eq(0.0).all()
+    first_ready = features.loc[features["t"] == 42].index[0]
+    assert gate.loc[first_ready] == 1.0
+
+
+def test_patef_state_expert_is_source_symmetric():
+    columns = set(EXPERT_FEATURES["state"])
+    source_specific = {
+        "delta_nrf_ausf",
+        "delta_route",
+        "cache_conflict_persist",
+        "route_conflict_persist",
+        "prov_nrf_ausf",
+        "prov_route",
+        "m_ausf",
+        "m_route",
+    }
+    assert columns.isdisjoint(source_specific)
