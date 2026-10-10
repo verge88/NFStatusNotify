@@ -151,3 +151,19 @@ The candidate satisfied all preregistered criteria in run `38060262689`.
 A separate promotion change moves the default `consensus_guard` operating
 point from the historical 2/12 reference to the validated 1/8 setting. The
 historical constants remain available so prior results stay reproducible.
+
+
+### Post-promotion verification
+
+The promoted 1/8 default was subsequently checked through the ordinary
+repository workflows:
+
+- benchmark `38061618580`: run-level recall 0.953918/FPR 0/delay 0 and
+  scenario-disjoint recall 0.949091/FPR 0;
+- real failover `38061618558`: benign alerts 0; counterfactual recall 1.0,
+  FPR 0, delay 0, strict external target met;
+- benign telemetry degradation `38061618577`: 4/4 valid runs × 15 variants,
+  with zero consensus alerts in every variant.
+
+Thus the promoted default is validated both by the preregistered paired series
+and by the repository's standard post-promotion evaluation paths.

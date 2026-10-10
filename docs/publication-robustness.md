@@ -128,3 +128,51 @@ preregistered real attack-like validation collected after selection
 (run `38060262689`). It satisfied all replacement criteria in 8/8 fresh
 Open5GS runs, so subsequent experiments use 1/8 as the validated default while
 retaining 2/12 as a historical comparator.
+
+
+## 3. Post-promotion verification
+
+After the frozen 1/8 candidate satisfied all preregistered replacement criteria
+in run `38060262689`, the repository promoted 1/8 to the default operating
+point while retaining explicit historical 2/12 constants.
+
+The promoted default was then re-evaluated through the repository's ordinary
+pipelines rather than through the frozen-candidate scorer.
+
+### Synthetic benchmark
+
+Run `38061618580`:
+
+- run-disjoint Recall@target-FPR: **0.953918**;
+- run-disjoint FPR: **0**;
+- median detection delay: **0**;
+- attack runs detected: **58/58**;
+- scenario-disjoint pooled recall: **0.949091**;
+- scenario-disjoint pooled FPR: **0**;
+- worst-scenario FPR: **0**;
+- minimum attack-scenario recall: **0.872727**;
+- attack runs detected across scenario holdouts: **300/300**.
+
+### Real failover control
+
+Run `38061618558`:
+
+- real benign A→B→A trace: 0 consensus alerts;
+- real-derived counterfactual: sample recall **1.0**;
+- empirical FPR: **0**;
+- attack-run detection rate: **1.0**;
+- median detection delay: **0**;
+- strict external target: **met**.
+
+The same trace remained non-alerting for semantic_guard and PA-TEF, while those
+two comparators did not detect the counterfactual at their low-FPR thresholds.
+
+### Real degraded-telemetry control
+
+Run `38061618577` repeated the 4-run × 15-view benign degradation matrix
+after promotion. All 4 fresh laboratories were valid. The promoted
+`consensus_guard` remained alert-free for every degradation variant in every
+run; the aggregate worst-case mean alert rate and maximum risk were both 0.
+
+These post-promotion reruns ensure that the published default is the same
+operating point used by the main benchmark and real-control workflows.

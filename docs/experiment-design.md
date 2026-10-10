@@ -113,11 +113,14 @@ CI.
 отрицательный detector-result остаётся видимым в artifact, но не маскируется
 как инфраструктурная ошибка.
 
-На текущем 12-сценарном hard-generalization benchmark `consensus_guard`
-удерживает scenario-disjoint FPR на 0 и даёт pooled attack recall 0.914,
-в то время как PA-TEF имеет более высокий recall, но превышает целевой FPR на
-невиденных observer-skew сценариях. `semantic_guard` при строгой calibration
-теряет attack recall из-за max-score ties.
+На текущем 12-сценарном hard-generalization benchmark promoted
+`consensus_guard` 1/8 удерживает scenario-disjoint FPR на 0 и даёт pooled
+attack recall 0.949091 при median delay 0 и 300/300 обнаруженных attack runs.
+На обычном run-disjoint split Recall@target-FPR = 0.953918 при FPR 0 и 58/58
+обнаруженных attack runs. PA-TEF на этом benchmark имеет немного меньший
+scenario-disjoint recall (разница PA-TEF − consensus ≈ −0.00412), а
+`semantic_guard` при строгой calibration теряет attack recall из-за
+max-score ties.
 
 ### Real consensus transfer result
 
@@ -144,6 +147,29 @@ samples соответствуют **1/1 обнаруженному attack run**
 Этот результат является evidence в пользу дальнейшего исследования, а не claim
 о deployable detector.
 
+### Promoted 1/8 post-validation controls
+
+После preregistered 8-run validation candidate 1/8 был promoted отдельным
+изменением и повторно проверен без изменения calibration protocol.
+
+Real failover run `38061618558`:
+
+- real benign trace: 0 alerts;
+- real-derived counterfactual: sample recall 1.0, FPR 0;
+- attack-run detection rate 1.0;
+- median detection delay 0;
+- strict `meets_external_target=true`.
+
+Real benign degradation run `38061618577`:
+
+- 4/4 valid fresh Open5GS laboratories;
+- 15 observer-loss/lag variants per run;
+- `consensus_guard` alert-free во всех вариантах и всех 4 runs;
+- worst observed consensus mean alert rate 0 and max risk 0.
+
+Post-promotion synthetic benchmark `38061618580` подтвердил run-level recall
+0.953918/FPR 0 и scenario-disjoint recall 0.949091/FPR 0.
+
 ## Независимые real-replicates
 
 Для оценки межзапускового разброса используется отдельная 8-run Open5GS
@@ -167,8 +193,9 @@ Detector alert не делает replicate невалидным и не искл
 
 ### Replicated real result
 
-Run `38055330313` produced 8/8 valid fresh Open5GS instantiations with
-16/16 unique UDM NF instance IDs. `consensus_guard` reproduced sample recall
+Historical reference run `38055330313` used the pre-promotion 2/12 operating
+point and produced 8/8 valid fresh Open5GS instantiations with 16/16 unique UDM
+NF instance IDs. That historical `consensus_guard` reproduced sample recall
 0.8, FPR 0, attack-run detection 8/8 and median detection delay 1 sample in
 every run; both `semantic_guard` and PA-TEF detected 0/8 attack runs at their
 low-FPR thresholds. All three methods produced zero benign alerts in all eight
