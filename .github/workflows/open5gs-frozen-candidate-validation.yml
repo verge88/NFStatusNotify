@@ -1,0 +1,225 @@
+name: Open5GS frozen consensus candidate validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/frozen-candidate-validation
+    paths:
+      - ".github/workflows/open5gs-frozen-candidate-validation.yml"
+      - "configs/consensus-candidate.yaml"
+      - "scripts/open5gs_failover_lab.py"
+      - "scripts/enrich_failover_observations.py"
+      - "scripts/score_frozen_consensus_candidate.py"
+      - "scripts/aggregate_frozen_candidate_validation.py"
+      - "src/nfnotify_lab/**"
+      - "lab/open5gs/udm-b.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  replicate:
+    name: candidate-validation-${{ matrix.replicate }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        replicate: [0, 1, 2, 3, 4, 5, 6, 7]
+    env:
+      OPEN5GS_VERSION: v2.7.7
+      UBUNTU_VERSION: jammy
+      MONGODB_VERSION: "8.0"
+      DOCKER_HOST_IP: 127.0.0.1
+      DOCKER_OPEN5GS_REV: 10295cfecb2f86f88944df1728127853eb4d6a1f
+      LAB_REPLICATE_ID: ${{ matrix.replicate }}
+      LAB_DIR: artifacts/open5gs-frozen-candidate
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install capture tools
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y tcpdump tshark jq
+
+      - name: Build Open5GS v2.7.7
+        run: |
+          set -euxo pipefail
+          git clone https://github.com/Borjis131/docker-open5gs.git /tmp/docker-open5gs
+          git -C /tmp/docker-open5gs checkout "$DOCKER_OPEN5GS_REV"
+
+          docker build \
+            --build-arg OPEN5GS_VERSION="$OPEN5GS_VERSION" \
+            --build-arg UBUNTU_VERSION="$UBUNTU_VERSION" \
+            -t "base-open5gs:$OPEN5GS_VERSION" \
+            /tmp/docker-open5gs/images/base-open5gs
+
+          for nf in nrf ausf udm; do
+            docker build \
+              --build-arg OPEN5GS_VERSION="$OPEN5GS_VERSION" \
+              --build-arg UBUNTU_VERSION="$UBUNTU_VERSION" \
+              -t "$nf:$OPEN5GS_VERSION" \
+              "/tmp/docker-open5gs/images/$nf"
+          done
+
+      - name: Start NRF AUSF and UDM-A
+        run: |
+          set -euxo pipefail
+          cd /tmp/docker-open5gs
+          docker compose -f compose-files/basic/docker-compose.yaml \
+            up -d --no-build nrf ausf udm
+
+      - name: Start SBI packet capture
+        run: |
+          set -euxo pipefail
+          mkdir -p "$LAB_DIR"
+          sudo tcpdump -i br-ogs -s 0 -U -w "$LAB_DIR/sbi.pcap" 'tcp port 80' \
+            > "$LAB_DIR/tcpdump.log" 2>&1 &
+          echo $! > "$LAB_DIR/tcpdump.pid"
+          sleep 1
+
+      - name: Run fresh benign A-B-A failover
+        run: |
+          set -euxo pipefail
+          python scripts/open5gs_failover_lab.py run --out "$LAB_DIR"
+
+      - name: Decode routes and notifications
+        if: always()
+        run: |
+          set +e
+          if [ -f "$LAB_DIR/tcpdump.pid" ]; then
+            sudo kill "$(cat "$LAB_DIR/tcpdump.pid")" 2>/dev/null
+            sleep 2
+          fi
+
+          if [ -s "$LAB_DIR/sbi.pcap" ]; then
+            tshark -r "$LAB_DIR/sbi.pcap" \
+              -d tcp.port==80,http2 \
+              -Y 'http2.headers.path contains "generate-auth-data" && http2.headers.method == "POST"' \
+              -T fields \
+              -e frame.time_epoch -e ip.src -e ip.dst \
+              -e http2.headers.method -e http2.headers.path \
+              -E header=y -E separator=/t -E quote=d \
+              > "$LAB_DIR/routes.tsv"
+
+            tshark -r "$LAB_DIR/sbi.pcap" \
+              -d tcp.port==80,http2 \
+              -Y 'http2.headers.path contains "nf-status-notify" && http2.headers.method == "POST"' \
+              -T fields \
+              -e frame.time_epoch -e ip.src -e ip.dst \
+              -e http2.headers.method -e http2.headers.path \
+              -E header=y -E separator=/t -E quote=d \
+              > "$LAB_DIR/notifications.tsv"
+          fi
+
+      - name: Snapshot AUSF cache log
+        run: |
+          mkdir -p "$LAB_DIR/logs"
+          docker cp ausf:/var/log/open5gs/ausf.log "$LAB_DIR/logs/ausf.log"
+
+      - name: Enrich and validate real evidence
+        run: |
+          set -euxo pipefail
+          python scripts/enrich_failover_observations.py \
+            --raw "$LAB_DIR/observations-raw.csv" \
+            --routes "$LAB_DIR/routes.tsv" \
+            --notifications "$LAB_DIR/notifications.tsv" \
+            --ausf-log "$LAB_DIR/logs/ausf.log" \
+            --meta "$LAB_DIR/failover-meta.json" \
+            --out "$LAB_DIR/observations.csv" \
+            --counterfactual "$LAB_DIR/counterfactual-observations.csv"
+
+          python - <<'PY'
+          import csv
+          import json
+          from pathlib import Path
+
+          root = Path("artifacts/open5gs-frozen-candidate")
+          evidence = json.loads((root / "evidence-summary.json").read_text())
+          a, b = evidence["udm_a"], evidence["udm_b"]
+          assert evidence["baseline_nrf"] == [a], evidence
+          assert evidence["baseline_ausf"] == [a], evidence
+          assert evidence["baseline_route"] == [a], evidence
+          assert evidence["failover_nrf"] == [b], evidence
+          assert evidence["failover_ausf"] == [b], evidence
+          assert evidence["failover_route"] == [b], evidence
+          assert evidence["recovery_nrf"] == [a], evidence
+          assert evidence["recovery_ausf"] == [a], evidence
+          assert evidence["recovery_route"] == [a], evidence
+
+          with (root / "observations.csv").open(newline="", encoding="utf-8") as f:
+              rows = list(csv.DictReader(f))
+          assert all(int(row["attack_active"]) == 0 for row in rows)
+          PY
+
+      - name: Score frozen reference and candidate
+        run: |
+          set -euxo pipefail
+          pip install -e .
+          cp configs/consensus-candidate.yaml "$LAB_DIR/consensus-candidate.yaml"
+          python scripts/score_frozen_consensus_candidate.py \
+            --config configs/consensus-candidate.yaml \
+            --real-observations "$LAB_DIR/observations.csv" \
+            --counterfactual-observations "$LAB_DIR/counterfactual-observations.csv" \
+            --out "$LAB_DIR/validation" \
+            --replicate-id "${{ matrix.replicate }}"
+
+      - name: Upload validation replicate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frozen-candidate-${{ matrix.replicate }}-${{ github.run_id }}
+          path: artifacts/open5gs-frozen-candidate/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker rm -f udm-b 2>/dev/null || true
+          cd /tmp/docker-open5gs
+          docker compose -f compose-files/basic/docker-compose.yaml down -v || true
+
+  aggregate:
+    name: aggregate-candidate-validation
+    needs: replicate
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+
+      - name: Download fresh validation artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: frozen-candidate-*-${{ github.run_id }}
+          path: artifacts/frozen-candidate-replicates
+
+      - name: Aggregate paired candidate evidence
+        run: |
+          python scripts/aggregate_frozen_candidate_validation.py \
+            --root artifacts/frozen-candidate-replicates \
+            --out artifacts/frozen-candidate-summary \
+            --requested-runs 8 \
+            --min-runs 6
+
+          cat artifacts/frozen-candidate-summary/frozen-candidate-summary.md \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload candidate validation summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: frozen-candidate-validation-${{ github.run_id }}
+          path: artifacts/frozen-candidate-summary/
+          retention-days: 30
