@@ -1,0 +1,55 @@
+name: Consensus persistence sensitivity
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/publication-robustness
+    paths:
+      - ".github/workflows/consensus-sensitivity.yml"
+      - "src/nfnotify_lab/consensus.py"
+      - "src/nfnotify_lab/sensitivity.py"
+      - "scripts/consensus_sensitivity.py"
+      - "src/nfnotify_lab/**"
+      - "tests/test_sensitivity.py"
+
+permissions:
+  contents: read
+
+jobs:
+  sensitivity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+
+      - name: Run development-only persistence sweep
+        run: |
+          python scripts/consensus_sensitivity.py             --out artifacts/consensus-sensitivity             --seeds 60             --steps 90             --target-fpr 0.001             --single 4,6,8,10,12,16             --dual 1,2,3,4
+
+      - name: Validate reference is reported without real-test tuning
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("artifacts/consensus-sensitivity")
+          summary = json.loads(
+              (root / "consensus-sensitivity-summary.json").read_text()
+          )
+          assert summary["development_only"] is True, summary
+          assert summary["real_test_used_for_selection"] is False, summary
+          assert summary["reference_2_12"]["single_source_steps"] == 12, summary
+          assert summary["reference_2_12"]["dual_source_steps"] == 2, summary
+          print(json.dumps(summary, indent=2))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: consensus-sensitivity-${{ github.run_id }}
+          path: artifacts/consensus-sensitivity/
+          retention-days: 30
