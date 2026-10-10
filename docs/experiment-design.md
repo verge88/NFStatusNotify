@@ -61,6 +61,12 @@ Provenance-aware модель должна сохранять более выс�
 
 Дополнительно запускается абляция `no_nrf/no_ausf/no_route/no_notify`.
 
+Абляция выполняется **до feature engineering**: скрываются исходные endpoint,
+event и mask-поля выбранного источника, после чего semantic/temporal/provenance
+признаки строятся заново. Производные признаки, рассчитанные до абляции, не
+могут переноситься в ablated dataset. Все варианты используют тот же
+`random_state` и run-level split, что основной benchmark.
+
 ## Критерий, при котором ML не оправдан
 
 Если rule baseline при равном или меньшем FPR стабильно имеет не худшие

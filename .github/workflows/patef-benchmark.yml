@@ -8,6 +8,7 @@ on:
       - research/patef-specialized-detector
       - research/scenario-disjoint-evaluation
       - research/semantic-guard-baseline
+      - research/leak-free-ablations
     paths:
       - ".github/workflows/patef-benchmark.yml"
       - "src/nfnotify_lab/**"

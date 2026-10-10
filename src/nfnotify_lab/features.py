@@ -43,7 +43,8 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     notify_seen = out["notify_seen"].fillna(0.0)
     invalid_subscription = 1.0 - out["notify_subscription_valid"].fillna(1.0)
     untrusted_sender = 1.0 - out["notify_sender_trusted"].fillna(1.0)
-    out["delta_notify"] = notify_seen * np.maximum(invalid_subscription, untrusted_sender)
+    notify_conflict = notify_seen * np.maximum(invalid_subscription, untrusted_sender)
+    out["delta_notify"] = notify_conflict.where(out["m_notify"].fillna(0) > 0, np.nan)
 
     prev_cache = out.groupby("run_id")["ausf_endpoint"].shift()
     has_pair = out["ausf_endpoint"].notna() & prev_cache.notna()
