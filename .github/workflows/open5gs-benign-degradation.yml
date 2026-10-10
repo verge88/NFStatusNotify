@@ -101,6 +101,7 @@ jobs:
       - name: Enrich and validate real benign evidence
         run: |
           set -euxo pipefail
+          pip install -e .
           python scripts/enrich_failover_observations.py             --raw "$LAB_DIR/observations-raw.csv"             --routes "$LAB_DIR/routes.tsv"             --notifications "$LAB_DIR/notifications.tsv"             --ausf-log "$LAB_DIR/logs/ausf.log"             --meta "$LAB_DIR/failover-meta.json"             --out "$LAB_DIR/observations.csv"             --counterfactual "$LAB_DIR/counterfactual-unused.csv"
 
           python - <<'PY'
@@ -127,7 +128,6 @@ jobs:
 
       - name: Score benign telemetry degradation matrix
         run: |
-          pip install -e .
           python scripts/real_telemetry_degradation.py             --observations "$LAB_DIR/observations.csv"             --out "$LAB_DIR/degradation"             --replicate-id "${{ matrix.replicate }}"             --target-fpr 0.001             --training-seeds 60             --steps 90
 
       - name: Upload degradation replicate
