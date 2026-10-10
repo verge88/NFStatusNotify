@@ -100,6 +100,7 @@ EXPERT_FEATURES: dict[str, tuple[str, ...]] = {
 
 PA_TEF_SINGLE_SOURCE_PERSISTENCE_STEPS = 7
 PA_TEF_DUAL_SOURCE_PERSISTENCE_STEPS = 1
+PA_TEF_NEUTRAL_SCORE = 0.5
 
 
 META_FEATURES = (
@@ -424,7 +425,13 @@ class ProvenanceAwareTemporalEvidenceFusion:
         frame = self._ensure_temporal(x)
         calibrated = self._calibrated_scores(frame)
         gate = provenance_normalized_attack_gate(frame).to_numpy(dtype=float)
-        return calibrated * gate
+
+        # Gate-off rows are semantically ineligible, but assigning zero would
+        # make the low-FPR threshold collapse to the smallest positive float
+        # and remove the learned fusion from the decision.  A neutral score
+        # preserves a meaningful threshold: an alert requires both semantic
+        # eligibility and calibrated learned evidence above the neutral prior.
+        return np.where(gate > 0.0, calibrated, PA_TEF_NEUTRAL_SCORE)
 
     def risk_report(self, x: pd.DataFrame) -> pd.DataFrame:
         frame = self._ensure_temporal(x)
