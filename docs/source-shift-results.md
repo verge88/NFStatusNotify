@@ -48,3 +48,25 @@ Future development should collect trustworthy observation timestamp, source-time
 - No forged NFStatusNotify payload was sent. The underlying real-control traffic is benign UDM failover and the attack-like trace is an offline counterfactual post-effect.
 
 Publication `main` and frozen evidence registry are unchanged.
+
+
+## Confirmatory run on corrected test loader
+
+The final source-shift rerun [38075933372](https://github.com/verge88/NFStatusNotify/actions/runs/38075933372), artifact [11679420694](https://github.com/verge88/NFStatusNotify/actions/runs/38075933372/artifacts/11679420694), completed successfully. Its `source-shift-decision.json` again reports `synthetic_success=false`, `synthetic_all_views_fpr_pass=false`, `synthetic_all_views_no_recall_loss=false`, and no >=1pp stressed-view recall gain. All other benchmark input parameters and detector code match run 38075859698; the intervening fix only corrected test module loading.
+
+## Fresh independent Open5GS benign and real-derived counterfactual
+
+Fresh [Open5GS failover run 38075878889](https://github.com/verge88/NFStatusNotify/actions/runs/38075878889), [artifact 11678560988](https://github.com/verge88/NFStatusNotify/actions/runs/38075878889/artifacts/11678560988), **completed successfully** (Open5GS v2.7.7, valid A→B→A, 11 timestamped observations). Benign alerts were **0/11 for each**: semantic_guard, consensus_guard, patef_gate_only, patef_learned_only, full PA-TEF.
+
+On the **offline real-derived counterfactual**, exactly 5 attack-active points were present (one episode). The five scored detectors produced:
+- semantic_guard: 0/5 attack points detected, 0 benign alerts;
+- consensus_guard: 5/5, 0 benign alerts, 0-sample delay;
+- patef_gate_only: 5/5, 0 benign alerts, 0-sample delay;
+- patef_learned_only: 5/5, 0 benign alerts, 0-sample delay;
+- full PA-TEF: 5/5, 0 benign alerts, 0-sample delay.
+
+The success of both full and gate-only on this **single real-derived counterfactual** establishes no incremental ML benefit; it cannot override the prespecified negative synthetic stress result. The empirical 0/11 alert rate is not a statistically demonstrated population FPR <=0.001. The counterfactual reuses real cache/route traces with the NRF view frozen during failover; it is **not a real forged notification exploit**.
+
+### Final preregistered determination
+
+**Negative incremental ML hypothesis.** Source-lag observers exceed the 0.1% FPR budget (pooled 0.4969% for route_lag4; 0.2484% for both_lag2), and full PA-TEF has no gain over its exact gate. A future experiment must measure source-clock freshness/age, use an explicitly causal freshness-aware *deterministic* baseline, and independently test any added learned value. This result is kept in a draft stacked PR and not merged to publication main.
