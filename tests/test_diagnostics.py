@@ -24,6 +24,8 @@ def test_calibration_diagnostics_account_for_max_score_ties():
         "consensus_guard",
         "isolation_forest",
         "provenance_aware",
+        "patef_gate_only",
+        "patef_learned_only",
         "patef",
     }
     assert (summary["benign_samples"] > 0).all()
