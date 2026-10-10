@@ -53,3 +53,14 @@ The null observations / FPR counts are heavily correlated within scenario and ru
 A separate real Open5GS A→B→A control uses the unchanged v2 detectors; it cannot evaluate new context alignment because authenticated per-source acquisition time and recovery event-time provenance have **not** been instrumented in the real adapter. Its attack-like trace is an offline counterfactual post-effect, not a forged NFStatusNotify payload delivered over the network. The protocol prohibited any such traffic.
 
 **Promotion decision:** keep PR Draft, do not merge to `main`, preserve both rejected hypotheses and negative safety tradeoff. The next research step would require independently measured provenance in actual capture code and a new preregistered test under a threat model that includes recoveries overlapping attacks, rather than picking a threshold on these viewed challenge scenarios.
+
+
+## Independent real Open5GS sanity control — completed (unchanged detectors)
+
+[Real Open5GS A→B→A run 38079258150](https://github.com/verge88/NFStatusNotify/actions/runs/38079258150): **success**. [Evidence artifact 11680395724](https://github.com/verge88/NFStatusNotify/actions/runs/38079258150/artifacts/11680395724). Open5GS v2.7.7, 11 valid observation points of genuine **benign** failover/recovery.
+
+Every baseline scored the same benign control with **0 alerts among 11 observations**: semantic_guard, consensus_guard, patef_gate_only, patef_learned_only and full patef. The replay of an **offline counterfactual post-effect** derived from that benign trace had five attack-active points in **one** episode. Consensus, gate-only, learned-only and full PA-TEF scored **5/5 detected**, with 0 benign alerts and median delay 0 samples; semantic_guard detected 0/5. These are *five samples of one episode*, not five independent attacks, and are **not** a live forged NFStatusNotify payload delivery.
+
+The laboratory did **not** execute the new `context_aligned_features` function. The source-time/recovery oracle required by that function was absent from recorded trusted acquisition metadata. Accordingly the external control proves only continued operation of previous baselines, **not** real-world validity of H1 or H2. Zero observed alerts on one short trace does not prove a population FPR ≤0.1%.
+
+This negative research result is final under the locked protocol; no changes to models/thresholds or a post-hoc positive reinterpretation are authorized.
