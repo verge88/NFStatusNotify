@@ -1,0 +1,53 @@
+name: Preregistered source-shift stress
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/source-shift-preregistered
+    paths:
+      - ".github/workflows/source-shift-preregistered.yml"
+      - "scripts/source_shift_preregistered.py"
+      - "tests/test_source_shift.py"
+      - "docs/source-shift-preregistered.md"
+      - "src/nfnotify_lab/**"
+
+permissions:
+  contents: read
+
+jobs:
+  source-shift:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install and verify
+        run: |
+          pip install -e ".[dev]"
+          python -m pytest -q tests/test_source_shift.py
+      - name: Locked leave-one-scenario-out source-shift experiment
+        run: |
+          python scripts/source_shift_preregistered.py \
+            --out artifacts/source-shift \
+            --seeds 60 \
+            --steps 90 \
+            --target-fpr 0.001 \
+            --random-state 42
+      - name: Publish summary
+        if: always()
+        run: |
+          if [ -f artifacts/source-shift/source-shift-summary.csv ]; then
+            cat artifacts/source-shift/source-shift-summary.csv
+          fi
+          if [ -f artifacts/source-shift/source-shift-decision.json ]; then
+            cat artifacts/source-shift/source-shift-decision.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: source-shift-${{ github.run_id }}
+          path: artifacts/source-shift/
+          retention-days: 45
