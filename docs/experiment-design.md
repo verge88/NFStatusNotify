@@ -130,8 +130,18 @@ alerts на реальной трассе. На counterfactual post-effect, по
 
 Таким образом, source-consensus semantics переносится на real-derived trace
 лучше двух прежних методов, но строгий внешний target recall=1.0 пока не
-достигнут. Этот результат является evidence в пользу дальнейшего исследования,
-а не claim о deployable detector.
+достигнут.
+
+Повторный validation run `38052364939` дополнительно разделил sample-level
+recall и episode-level detection. Для `consensus_guard` те же 4/5 alert
+samples соответствуют **1/1 обнаруженному attack run** с
+`median_detection_delay=1` sample и FPR 0. `semantic_guard` и PA-TEF не
+обнаружили этот attack run при своих low-FPR thresholds.
+
+Строгий `meets_external_target` намеренно остаётся sample-level и не меняется
+после этого наблюдения; run-detection/delay публикуются как отдельные метрики.
+Этот результат является evidence в пользу дальнейшего исследования, а не claim
+о deployable detector.
 
 ## Source-consensus hypothesis
 
