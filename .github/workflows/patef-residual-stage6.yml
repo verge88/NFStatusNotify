@@ -1,0 +1,53 @@
+name: Locked Stage 6 PA-TEF consensus residual study
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/patef-consensus-residual-v1
+    paths:
+      - ".github/workflows/patef-residual-stage6.yml"
+      - "src/nfnotify_lab/patef_residual.py"
+      - "src/nfnotify_lab/residual_freshness.py"
+      - "scripts/stage6_residual_study.py"
+      - "tests/test_patef_residual.py"
+      - "docs/stage6-residual-protocol.md"
+
+permissions:
+  contents: read
+
+jobs:
+  residual:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pinned Python project and enforce implementation tests
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          ruff check src tests scripts/stage6_residual_study.py
+          python -m pytest -q tests/test_patef_residual.py
+      - name: Run preregistered Stage 6 scenario-disjoint experiment
+        run: |
+          python scripts/stage6_residual_study.py \
+            --out artifacts/patef-consensus-residual
+      - name: Print locked decisions and complete summary
+        if: always()
+        run: |
+          git rev-parse HEAD
+          if [ -f artifacts/patef-consensus-residual/stage6-decision.json ]; then
+            cat artifacts/patef-consensus-residual/stage6-decision.json
+          fi
+          if [ -f artifacts/patef-consensus-residual/stage6-summary.csv ]; then
+            cat artifacts/patef-consensus-residual/stage6-summary.csv
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: patef-residual-stage6-${{ github.run_id }}
+          path: artifacts/patef-consensus-residual/
+          retention-days: 45
