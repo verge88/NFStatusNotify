@@ -17,7 +17,7 @@ from nfnotify_lab.evaluate import _run_delay, _threshold_at_fpr
 from nfnotify_lab.features import build_features
 from nfnotify_lab.freshness import attach_acquisition_times
 from nfnotify_lab.patef_residual import (
-    PatefResidualGuard, TARGET_FPR, ABSTAIN_THRESHOLD,
+    PatefResidualGuard, TARGET_FPR,
 )
 from nfnotify_lab.residual_freshness import (
     SOURCE_COLUMNS, availability_mask, make_view, with_causal_source_ages,
