@@ -375,6 +375,13 @@ def verdict(
     }
 
 
+def _encode_numpy(value: object) -> object:
+    """Convert numpy scalar types without silently changing scientific values."""
+    if isinstance(value, np.generic):
+        return value.item()
+    raise TypeError(f"cannot encode {type(value).__name__}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", required=True)
@@ -477,7 +484,7 @@ def main() -> None:
     boot.to_csv(output / "stage6-bootstrap.csv", index=False)
     runs_df.to_csv(output / "stage6-episode-delay.csv", index=False)
     (output / "stage6-decision.json").write_text(
-        json.dumps(decision, indent=2), encoding="utf-8"
+        json.dumps(decision, indent=2, default=_encode_numpy), encoding="utf-8"
     )
     (output / "stage6-config.json").write_text(
         json.dumps({
@@ -496,7 +503,7 @@ def main() -> None:
         }, indent=2), encoding="utf-8"
     )
     print(summary.to_csv(index=False), flush=True)
-    print(json.dumps(decision, indent=2), flush=True)
+    print(json.dumps(decision, indent=2, default=_encode_numpy), flush=True)
 
 
 if __name__ == "__main__":
