@@ -1,0 +1,41 @@
+name: Post-hoc available-source deterministic comparator
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/patef-consensus-residual-v1
+    paths:
+      - ".github/workflows/available-consensus-diagnostic.yml"
+      - "src/nfnotify_lab/available_consensus.py"
+      - "scripts/stage6_available_baseline_diagnostic.py"
+      - "tests/test_available_consensus.py"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Enforce post-hoc deterministic baseline tests
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          ruff check src tests scripts/stage6_available_baseline_diagnostic.py
+          python -m pytest -q tests/test_available_consensus.py
+      - name: Score revealed test scenarios as exploratory diagnostic
+        run: |
+          python scripts/stage6_available_baseline_diagnostic.py \
+            --out artifacts/available-consensus-diagnostic
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: available-consensus-posthoc-${{ github.run_id }}
+          path: artifacts/available-consensus-diagnostic/
+          retention-days: 45
